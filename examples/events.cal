@@ -1,0 +1,28 @@
+# Calchemy Events
+
+# Weekly standup
+2024-01-15 09:00 10:00 Team standup +RRULE:FREQ=WEEKLY
+
+# Every 2nd Thursday - planning
+2024-01-04 14:00 15:00 Planning +RRULE:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH
+
+# Every last Friday - retro
+2024-01-26 16:00 17:00 Retro +RRULE:FREQ=MONTHLY;BYDAY=-1FR
+
+# Daily medication
+2024-01-15 08:00 08:00 Take vitamins +RRULE:FREQ=DAILY
+
+# Yearly birthday
+2024-03-20 00:00 Mom's birthday +RRULE:FREQ=YEARLY
+
+# Weekly with exception - bin collection moved
+2024-05-27 07:00 07:00 Bin collection +RRULE:FREQ=WEEKLY +EXDATE:2024-05-24
+
+# All-day holiday
+2024-07-04 00:00 Holiday +RRULE:FREQ=YEARLY
+
+# Event with location and tags
+2024-01-15 09:00 10:00 Team standup @office +work +recurring
+
+# Single event
+2024-02-14 19:00 22:00 Valentine's dinner @restaurant
