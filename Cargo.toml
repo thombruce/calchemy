@@ -9,6 +9,12 @@ icalendar = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
+directories = "5.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4"
+
+[[bin]]
+name = "calchemy"
+path = "src/main.rs"

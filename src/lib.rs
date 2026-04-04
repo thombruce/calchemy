@@ -67,6 +67,14 @@ impl Calendar {
         &self.events
     }
 
+    pub fn remove_event(&mut self, index: usize) -> Option<Event> {
+        if index < self.events.len() {
+            Some(self.events.remove(index))
+        } else {
+            None
+        }
+    }
+
     pub fn events_between(
         &self,
         start: NaiveDate,
