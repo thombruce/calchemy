@@ -414,4 +414,111 @@ mod tests {
         assert!(formatted.contains("+work"));
         assert!(formatted.contains("@office"));
     }
+
+    #[test]
+    fn test_parse_exception() {
+        let line = "2024-05-27 07:00 Bin collection +RRULE:FREQ=WEEKLY +EXDATE:2024-05-24";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.exceptions.len(), 1);
+        assert_eq!(
+            event.exceptions[0],
+            NaiveDate::from_ymd_opt(2024, 5, 24).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_multiple_tags() {
+        let line = "2024-01-15 09:00 Team standup +work +recurring";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.tags, vec!["work", "recurring"]);
+    }
+
+    #[test]
+    fn test_parse_complex_rrule() {
+        let line = "2024-01-04 14:00 Planning +RRULE:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(
+            event.rrule,
+            Some("FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH".to_string())
+        );
+    }
+
+    #[test]
+    fn test_calendar_roundtrip() {
+        use tempfile::NamedTempFile;
+
+        let mut cal = Calendar::new();
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            title: "Team standup".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            exceptions: Vec::new(),
+            tags: vec!["work".to_string()],
+            location: None,
+        });
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        cal.save(path).unwrap();
+
+        let loaded = Calendar::load(path).unwrap();
+        assert_eq!(cal.events().len(), loaded.events().len());
+        assert_eq!(loaded.events()[0].title, "Team standup");
+    }
+
+    #[test]
+    fn test_events_between_recurrence() {
+        let mut cal = Calendar::new();
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            title: "Team standup".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            location: None,
+        });
+
+        let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(2024, 1, 31).unwrap();
+
+        let events = cal.events_between(start, end).unwrap();
+        // Should have 4 occurrences: Jan 15, 22, 29 (and possibly 8 if we expand fully)
+        assert!(
+            events.len() >= 3,
+            "Expected at least 3 occurrences, got {}",
+            events.len()
+        );
+    }
+
+    #[test]
+    fn test_export_ics() {
+        use tempfile::NamedTempFile;
+
+        let mut cal = Calendar::new();
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            title: "Team standup".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            exceptions: Vec::new(),
+            tags: vec!["work".to_string()],
+            location: Some("office".to_string()),
+        });
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        export_ics(&cal, path).unwrap();
+
+        let content = std::fs::read_to_string(path).unwrap();
+        assert!(content.contains("BEGIN:VCALENDAR"));
+        assert!(content.contains("BEGIN:VEVENT"));
+        assert!(content.contains("SUMMARY:Team standup"));
+        assert!(content.contains("RRULE:FREQ=WEEKLY"));
+        assert!(content.contains("LOCATION:office"));
+    }
 }

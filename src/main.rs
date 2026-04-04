@@ -267,3 +267,146 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use assert_cmd::prelude::*;
+    use predicates::prelude::*;
+    use std::process::Command;
+
+    #[test]
+    fn test_add_command() {
+        let mut cmd = Command::cargo_bin("calchemy").unwrap();
+
+        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        cmd.arg("-f")
+            .arg(path)
+            .arg("add")
+            .arg("--date")
+            .arg("2024-01-15")
+            .arg("--time")
+            .arg("09:00")
+            .arg("--end-time")
+            .arg("10:00")
+            .arg("--title")
+            .arg("Team standup")
+            .arg("--rrule")
+            .arg("FREQ=WEEKLY");
+
+        cmd.assert().success();
+
+        let content = std::fs::read_to_string(path).unwrap();
+        assert!(content.contains("Team standup"));
+        assert!(content.contains("FREQ=WEEKLY"));
+    }
+
+    #[test]
+    fn test_list_output_format() {
+        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Add an event first
+        let mut add_cmd = Command::cargo_bin("calchemy").unwrap();
+        add_cmd
+            .arg("-f")
+            .arg(path)
+            .arg("add")
+            .arg("--date")
+            .arg("2024-01-15")
+            .arg("--time")
+            .arg("09:00")
+            .arg("--title")
+            .arg("Test event");
+        add_cmd.assert().success();
+
+        // Now list
+        let mut list_cmd = Command::cargo_bin("calchemy").unwrap();
+        list_cmd.arg("-f").arg(path).arg("list").arg("--all");
+
+        list_cmd
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("[0]"))
+            .stdout(predicate::str::contains("2024-01-15"))
+            .stdout(predicate::str::contains("Test event"));
+    }
+
+    #[test]
+    fn test_delete_command() {
+        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // Add two events
+        let mut add1 = Command::cargo_bin("calchemy").unwrap();
+        add1.arg("-f")
+            .arg(path)
+            .arg("add")
+            .arg("--date")
+            .arg("2024-01-15")
+            .arg("--title")
+            .arg("Event 1");
+        add1.assert().success();
+
+        let mut add2 = Command::cargo_bin("calchemy").unwrap();
+        add2.arg("-f")
+            .arg(path)
+            .arg("add")
+            .arg("--date")
+            .arg("2024-01-16")
+            .arg("--title")
+            .arg("Event 2");
+        add2.assert().success();
+
+        // Delete first event
+        let mut del_cmd = Command::cargo_bin("calchemy").unwrap();
+        del_cmd.arg("-f").arg(path).arg("delete").arg("0");
+        del_cmd.assert().success();
+
+        // List remaining - should show Event 2 at index 0
+        let mut list_cmd = Command::cargo_bin("calchemy").unwrap();
+        list_cmd.arg("-f").arg(path).arg("list").arg("--all");
+
+        let output = list_cmd.output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        assert!(stdout.contains("Event 2"));
+        assert!(!stdout.contains("Event 1"));
+    }
+
+    #[test]
+    fn test_export_command() {
+        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
+        let cal_path = temp_file.path().to_str().unwrap();
+
+        // Add event
+        let mut add_cmd = Command::cargo_bin("calchemy").unwrap();
+        add_cmd
+            .arg("-f")
+            .arg(cal_path)
+            .arg("add")
+            .arg("--date")
+            .arg("2024-01-15")
+            .arg("--title")
+            .arg("Test");
+        add_cmd.assert().success();
+
+        // Export
+        let mut export_cmd = Command::cargo_bin("calchemy").unwrap();
+        let ics_path = std::path::Path::new(cal_path).with_extension("ics");
+        export_cmd
+            .arg("-f")
+            .arg(cal_path)
+            .arg("export")
+            .arg("--output")
+            .arg(ics_path.to_str().unwrap());
+        export_cmd.assert().success();
+
+        // Verify ICS file exists and has content
+        assert!(ics_path.exists());
+        let ics_content = std::fs::read_to_string(&ics_path).unwrap();
+        assert!(ics_content.contains("BEGIN:VCALENDAR"));
+        assert!(ics_content.contains("Test"));
+    }
+}
