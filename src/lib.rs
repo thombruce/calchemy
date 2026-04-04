@@ -11,6 +11,7 @@ pub struct Event {
     pub rrule: Option<String>,
     pub exceptions: Vec<NaiveDate>,
     pub tags: Vec<String>,
+    pub hashtags: Vec<String>,
     pub location: Option<String>,
 }
 
@@ -21,6 +22,7 @@ pub struct ExpandedEvent {
     pub end_time: Option<NaiveTime>,
     pub title: String,
     pub tags: Vec<String>,
+    pub hashtags: Vec<String>,
     pub location: Option<String>,
     pub is_exception: bool,
 }
@@ -95,6 +97,7 @@ impl Calendar {
                     end_time: event.end_time,
                     title: event.title.clone(),
                     tags: event.tags.clone(),
+                    hashtags: event.hashtags.clone(),
                     location: event.location.clone(),
                     is_exception: false,
                 });
@@ -190,10 +193,11 @@ fn parse_event_line(line: &str) -> Option<Event> {
 
     let mut start_time = None;
     let mut end_time = None;
-    let mut title_parts = Vec::new();
+    let mut title_and_metadata = Vec::new();
     let mut rrule = None;
     let mut exceptions = Vec::new();
     let mut tags = Vec::new();
+    let mut hashtags = Vec::new();
     let mut location = None;
 
     let mut i = 1;
@@ -201,7 +205,12 @@ fn parse_event_line(line: &str) -> Option<Event> {
         let part = parts[i];
 
         if part == "00:00"
-            && (i + 1 >= parts.len() || parts[i + 1] == "+" || parts[i + 1].starts_with('+'))
+            && (i + 1 >= parts.len()
+                || parts[i + 1].starts_with("rrule:")
+                || parts[i + 1].starts_with("exdate:")
+                || parts[i + 1].starts_with('#')
+                || parts[i + 1].starts_with('+')
+                || parts[i + 1].starts_with('@'))
         {
             i += 1;
             continue;
@@ -218,32 +227,47 @@ fn parse_event_line(line: &str) -> Option<Event> {
             continue;
         }
 
-        if part.starts_with('@') {
-            location = Some(part[1..].to_string());
-            i += 1;
-            continue;
-        }
-
-        if part.starts_with('+') {
-            let key_value = &part[1..];
-            if key_value.starts_with("RRULE:") {
-                rrule = Some(key_value[6..].to_string());
-            } else if key_value.starts_with("EXDATE:") {
-                if let Ok(d) = NaiveDate::parse_from_str(&key_value[7..], "%Y-%m-%d") {
-                    exceptions.push(d);
-                }
-            } else {
-                tags.push(key_value.to_string());
-            }
-            i += 1;
-            continue;
-        }
-
-        title_parts.push(part);
+        title_and_metadata.push(part);
         i += 1;
     }
 
-    let title = title_parts.join(" ").trim_matches('"').to_string();
+    let mut title_parts = Vec::new();
+    let mut metadata = Vec::new();
+    let mut in_metadata = false;
+
+    for part in &title_and_metadata {
+        if part.starts_with('@')
+            || part.starts_with('+')
+            || part.starts_with("rrule:")
+            || part.starts_with("exdate:")
+            || part.starts_with('#')
+        {
+            in_metadata = true;
+        }
+        if in_metadata {
+            metadata.push(*part);
+        } else {
+            title_parts.push(*part);
+        }
+    }
+
+    for meta in metadata {
+        if meta.starts_with('@') {
+            location = Some(meta[1..].to_string());
+        } else if meta.starts_with('+') {
+            tags.push(meta[1..].to_string());
+        } else if meta.starts_with("rrule:") {
+            rrule = Some(meta[6..].to_string());
+        } else if meta.starts_with("exdate:") {
+            if let Ok(d) = NaiveDate::parse_from_str(&meta[7..], "%Y-%m-%d") {
+                exceptions.push(d);
+            }
+        } else if meta.starts_with('#') {
+            hashtags.push(meta[1..].to_string());
+        }
+    }
+
+    let title = title_parts.join(" ");
 
     if title.is_empty() {
         return None;
@@ -257,6 +281,7 @@ fn parse_event_line(line: &str) -> Option<Event> {
         rrule,
         exceptions,
         tags,
+        hashtags,
         location,
     })
 }
@@ -274,22 +299,26 @@ fn format_event(event: &Event) -> String {
         }
     }
 
+    parts.push(event.title.clone());
+
     if let Some(loc) = &event.location {
         parts.push(format!("@{}", loc));
     }
 
-    parts.push(format!("\"{}\"", event.title));
+    for tag in &event.tags {
+        parts.push(format!("+{}", tag));
+    }
 
     if let Some(rrule) = &event.rrule {
-        parts.push(format!("+RRULE:{}", rrule));
+        parts.push(format!("rrule:{}", rrule));
     }
 
     for ex in &event.exceptions {
-        parts.push(format!("+EXDATE:{}", ex.format("%Y-%m-%d")));
+        parts.push(format!("exdate:{}", ex.format("%Y-%m-%d")));
     }
 
-    for tag in &event.tags {
-        parts.push(format!("+{}", tag));
+    for tag in &event.hashtags {
+        parts.push(format!("#{}", tag));
     }
 
     parts.join(" ")
@@ -358,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple_event() {
-        let line = "2024-01-15 09:00 10:00 \"Team standup\"";
+        let line = "2024-01-15 09:00 10:00 Team standup";
         let event = parse_event_line(line).unwrap();
         assert_eq!(event.date, NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
         assert_eq!(
@@ -374,21 +403,21 @@ mod tests {
 
     #[test]
     fn test_parse_event_with_rrule() {
-        let line = "2024-01-15 09:00 10:00 \"Team standup\" +RRULE:FREQ=WEEKLY";
+        let line = "2024-01-15 09:00 10:00 Team standup rrule:FREQ=WEEKLY";
         let event = parse_event_line(line).unwrap();
         assert_eq!(event.rrule, Some("FREQ=WEEKLY".to_string()));
     }
 
     #[test]
     fn test_parse_event_with_location() {
-        let line = "2024-01-15 09:00 10:00 @office \"Team standup\"";
+        let line = "2024-01-15 09:00 10:00 Team standup @office";
         let event = parse_event_line(line).unwrap();
         assert_eq!(event.location, Some("office".to_string()));
     }
 
     #[test]
     fn test_parse_allday_event() {
-        let line = "2024-07-04 Holiday +RRULE:FREQ=YEARLY";
+        let line = "2024-07-04 Holiday rrule:FREQ=YEARLY";
         let event = parse_event_line(line).unwrap();
         assert_eq!(event.start_time, None);
         assert_eq!(event.title, "Holiday");
@@ -405,19 +434,20 @@ mod tests {
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
+            hashtags: Vec::new(),
             location: Some("office".to_string()),
         };
 
         let formatted = format_event(&event);
         assert!(formatted.contains("2024-01-15"));
-        assert!(formatted.contains("+RRULE:FREQ=WEEKLY"));
+        assert!(formatted.contains("rrule:FREQ=WEEKLY"));
         assert!(formatted.contains("+work"));
         assert!(formatted.contains("@office"));
     }
 
     #[test]
     fn test_parse_exception() {
-        let line = "2024-05-27 07:00 Bin collection +RRULE:FREQ=WEEKLY +EXDATE:2024-05-24";
+        let line = "2024-05-27 07:00 Bin collection rrule:FREQ=WEEKLY exdate:2024-05-24";
         let event = parse_event_line(line).unwrap();
         assert_eq!(event.exceptions.len(), 1);
         assert_eq!(
@@ -435,12 +465,19 @@ mod tests {
 
     #[test]
     fn test_parse_complex_rrule() {
-        let line = "2024-01-04 14:00 Planning +RRULE:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH";
+        let line = "2024-01-04 14:00 Planning rrule:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH";
         let event = parse_event_line(line).unwrap();
         assert_eq!(
             event.rrule,
             Some("FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_hashtags() {
+        let line = "2024-01-15 09:00 Team standup #weekly #important";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.hashtags, vec!["weekly", "important"]);
     }
 
     #[test]
@@ -456,6 +493,7 @@ mod tests {
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
+            hashtags: Vec::new(),
             location: None,
         });
 
@@ -479,6 +517,7 @@ mod tests {
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: Vec::new(),
+            hashtags: Vec::new(),
             location: None,
         });
 
@@ -507,6 +546,7 @@ mod tests {
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
+            hashtags: Vec::new(),
             location: Some("office".to_string()),
         });
 

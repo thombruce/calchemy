@@ -24,14 +24,14 @@ cargo build --release
 Events are stored in a simple line-based format:
 
 ```
-YYYY-MM-DD HH:MM HH:MM "Title" @location +tag +RRULE:rule +EXDATE:date
+YYYY-MM-DD HH:MM HH:MM Title @context +project key:value #hashtag
 ```
 
 Example:
 ```
-2024-01-15 09:00 10:00 Team standup @office +work +RRULE:FREQ=WEEKLY
-2024-01-04 14:00 15:00 Planning meeting +RRULE:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH
-2024-05-27 07:00 Bin collection +RRULE:FREQ=WEEKLY +EXDATE:2024-05-24
+2024-01-15 09:00 10:00 Team standup @office +work rrule:FREQ=WEEKLY
+2024-01-04 14:00 15:00 Planning meeting rrule:FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH
+2024-05-27 07:00 Bin collection rrule:FREQ=WEEKLY exdate:2024-05-24
 ```
 
 ### Format Components
@@ -41,11 +41,20 @@ Example:
 | Date | YYYY-MM-DD | `2024-01-15` |
 | Start time | HH:MM | `09:00` |
 | End time | HH:MM (optional) | `10:00` |
-| Title | Event description | `"Team standup"` |
-| Location | @ prefix | `@office` |
-| Tags | + prefix | `+work` |
-| RRULE | +RRULE: prefix | `+RRULE:FREQ=WEEKLY` |
-| Exceptions | +EXDATE: prefix | `+EXDATE:2024-05-24` |
+| Title | Event description (unquoted) | `Team standup` |
+| Location | @ prefix (context) | `@office` |
+| Tags (projects) | + prefix | `+work` |
+| RRULE | rrule: prefix | `rrule:FREQ=WEEKLY` |
+| Exceptions | exdate: prefix | `exdate:2024-05-24` |
+| Hashtags | # prefix | `#weekly` |
+
+### Recommended Order
+
+For consistency (especially when using `sort` on the file), place elements in this order:
+
+```
+YYYY-MM-DD HH:MM HH:MM Title @context +project key:value #hashtag
+```
 
 ### Recurrence Rules (RRULE)
 
@@ -187,7 +196,14 @@ The Calchemy format is designed to be:
 
 Omit time for all-day events:
 ```
-2024-07-04 Holiday +RRULE:FREQ=YEARLY
+2024-07-04 Holiday rrule:FREQ=YEARLY
+```
+
+### Hashtags
+
+Use `#` prefix for hashtags anywhere in the event line:
+```
+2024-01-15 09:00 Team standup #weekly #important
 ```
 
 ### Time Only Events

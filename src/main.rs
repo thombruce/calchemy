@@ -47,6 +47,10 @@ enum Commands {
         #[arg(long)]
         tag: Vec<String>,
 
+        /// Hashtags (can be specified multiple times)
+        #[arg(long)]
+        hashtag: Vec<String>,
+
         /// Location
         #[arg(long)]
         location: Option<String>,
@@ -160,6 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rrule,
             exdate,
             tag,
+            hashtag,
             location,
         } => {
             let date = parse_date(date)?;
@@ -189,6 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rrule: rrule.clone(),
                 exceptions,
                 tags: tag.clone(),
+                hashtags: hashtag.clone(),
                 location: location.clone(),
             };
 
@@ -209,6 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         end_time: e.end_time,
                         title: e.title.clone(),
                         tags: e.tags.clone(),
+                        hashtags: e.hashtags.clone(),
                         location: e.location.clone(),
                         is_exception: false,
                     })
@@ -246,6 +253,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if !event.tags.is_empty() {
                     println!("       +{}", event.tags.join(" +"));
+                }
+                if !event.hashtags.is_empty() {
+                    println!("       #{}", event.hashtags.join(" #"));
                 }
             }
         }
