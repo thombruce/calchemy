@@ -31,6 +31,10 @@ enum Commands {
         #[arg(long)]
         end_time: Option<String>,
 
+        /// End date for multi-day events (YYYY-MM-DD)
+        #[arg(long)]
+        end_date: Option<String>,
+
         /// Event title
         #[arg(long)]
         title: String,
@@ -80,6 +84,18 @@ enum Commands {
 
     /// Delete an event
     Delete {
+        /// Event index (use 'calchemy list' to see indices)
+        index: usize,
+    },
+
+    /// Close (complete) an event
+    Close {
+        /// Event index (use 'calchemy list' to see indices)
+        index: usize,
+    },
+
+    /// Open (uncomplete) an event
+    Open {
         /// Event index (use 'calchemy list' to see indices)
         index: usize,
     },
@@ -160,6 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             date,
             time,
             end_time,
+            end_date,
             title,
             rrule,
             exdate,
@@ -181,6 +198,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None
             };
 
+            let end_date = if let Some(d) = end_date {
+                Some(parse_date(d)?)
+            } else {
+                None
+            };
+
             let mut exceptions = Vec::new();
             for ex in exdate {
                 exceptions.push(parse_date(ex)?);
@@ -190,12 +213,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 date,
                 start_time,
                 end_time,
+                end_date,
                 title: title.clone(),
                 rrule: rrule.clone(),
                 exceptions,
                 tags: tag.clone(),
                 hashtags: hashtag.clone(),
                 location: location.clone(),
+                completed: false,
             };
 
             calendar.add_event(event);
@@ -213,11 +238,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         date: e.date,
                         start_time: e.start_time,
                         end_time: e.end_time,
+                        end_date: e.end_date,
                         title: e.title.clone(),
                         tags: e.tags.clone(),
                         hashtags: e.hashtags.clone(),
                         location: e.location.clone(),
                         is_exception: false,
+                        completed: e.completed,
                     })
                     .collect()
             } else if let Some(m) = month {
@@ -234,7 +261,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("=== Events ===");
             for (i, event) in events.iter().enumerate() {
-                let date_str = event.date.format("%Y-%m-%d");
+                if !*all && event.completed {
+                    continue;
+                }
+
+                let date_str = event.date.format("%Y-%m-%d").to_string();
                 let time_str = event
                     .start_time
                     .map(|t| t.format("%H:%M").to_string())
@@ -244,10 +275,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|t| format!("-{}", t.format("%H:%M")))
                     .unwrap_or_default();
 
-                println!(
-                    "[{}] {} {}{} {}",
-                    i, date_str, time_str, end_str, event.title
-                );
+                let date_range = if let Some(ref end_date) = event.end_date {
+                    let end_date_str = end_date.format("%Y-%m-%d").to_string();
+                    if event.start_time.is_some() {
+                        let end_time_str = event
+                            .end_time
+                            .map(|t| t.format("%H:%M").to_string())
+                            .unwrap_or_else(|| "all-day".to_string());
+                        format!(
+                            "{} {} - {} {}",
+                            date_str, time_str, end_date_str, end_time_str
+                        )
+                    } else {
+                        format!("{} - {}", date_str, end_date_str)
+                    }
+                } else if event.start_time.is_some() {
+                    format!("{} {}{}", date_str, time_str, end_str)
+                } else {
+                    format!("{} {}", date_str, time_str)
+                };
+
+                let completed_prefix = if event.completed { "x " } else { "" };
+                println!("[{}] {}{} {}", i, completed_prefix, date_range, event.title);
                 if let Some(ref loc) = event.location {
                     println!("       @{}", loc);
                 }
@@ -272,6 +321,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             calendar.save(path.to_str().unwrap())?;
 
             println!("Event at index {} deleted.", index);
+        }
+
+        Commands::Close { index } => {
+            let events = calendar.events_mut();
+            if *index >= events.len() {
+                return Err(format!("Invalid index: {}", index).into());
+            }
+            events[*index].completed = true;
+            calendar.save(path.to_str().unwrap())?;
+
+            println!("Event at index {} marked as complete.", index);
+        }
+
+        Commands::Open { index } => {
+            let events = calendar.events_mut();
+            if *index >= events.len() {
+                return Err(format!("Invalid index: {}", index).into());
+            }
+            events[*index].completed = false;
+            calendar.save(path.to_str().unwrap())?;
+
+            println!("Event at index {} marked as incomplete.", index);
         }
     }
 

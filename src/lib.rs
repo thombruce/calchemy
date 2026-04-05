@@ -7,12 +7,14 @@ pub struct Event {
     pub date: NaiveDate,
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
+    pub end_date: Option<NaiveDate>,
     pub title: String,
     pub rrule: Option<String>,
     pub exceptions: Vec<NaiveDate>,
     pub tags: Vec<String>,
     pub hashtags: Vec<String>,
     pub location: Option<String>,
+    pub completed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,11 +22,13 @@ pub struct ExpandedEvent {
     pub date: NaiveDate,
     pub start_time: Option<NaiveTime>,
     pub end_time: Option<NaiveTime>,
+    pub end_date: Option<NaiveDate>,
     pub title: String,
     pub tags: Vec<String>,
     pub hashtags: Vec<String>,
     pub location: Option<String>,
     pub is_exception: bool,
+    pub completed: bool,
 }
 
 #[derive(Error, Debug)]
@@ -69,6 +73,10 @@ impl Calendar {
         &self.events
     }
 
+    pub fn events_mut(&mut self) -> &mut Vec<Event> {
+        &mut self.events
+    }
+
     pub fn remove_event(&mut self, index: usize) -> Option<Event> {
         if index < self.events.len() {
             Some(self.events.remove(index))
@@ -95,11 +103,13 @@ impl Calendar {
                     date: occ,
                     start_time: event.start_time,
                     end_time: event.end_time,
+                    end_date: event.end_date,
                     title: event.title.clone(),
                     tags: event.tags.clone(),
                     hashtags: event.hashtags.clone(),
                     location: event.location.clone(),
                     is_exception: false,
+                    completed: event.completed,
                 });
             }
         }
@@ -189,10 +199,26 @@ fn parse_event_line(line: &str) -> Option<Event> {
         return None;
     }
 
-    let date = NaiveDate::parse_from_str(parts[0], "%Y-%m-%d").ok()?;
+    let mut completed = false;
+    let date_parts_offset: usize;
+
+    // Check for 'x' prefix (completed marker)
+    if parts[0] == "x" {
+        completed = true;
+        date_parts_offset = 1;
+    } else {
+        date_parts_offset = 0;
+    }
+
+    if parts.len() <= date_parts_offset {
+        return None;
+    }
+
+    let date = NaiveDate::parse_from_str(parts[date_parts_offset], "%Y-%m-%d").ok()?;
 
     let mut start_time = None;
     let mut end_time = None;
+    let mut end_date = None;
     let mut title_and_metadata = Vec::new();
     let mut rrule = None;
     let mut exceptions = Vec::new();
@@ -200,7 +226,7 @@ fn parse_event_line(line: &str) -> Option<Event> {
     let mut hashtags = Vec::new();
     let mut location = None;
 
-    let mut i = 1;
+    let mut i = date_parts_offset + 1;
     while i < parts.len() {
         let part = parts[i];
 
@@ -220,10 +246,33 @@ fn parse_event_line(line: &str) -> Option<Event> {
             start_time = NaiveTime::parse_from_str(part, "%H:%M").ok();
             i += 1;
 
-            if i < parts.len() && parts[i].parse::<NaiveTime>().is_ok() {
-                end_time = NaiveTime::parse_from_str(parts[i], "%H:%M").ok();
-                i += 1;
+            if i < parts.len() {
+                if parts[i].parse::<NaiveTime>().is_ok() {
+                    // Next part is a time -> end_time (single-day event)
+                    end_time = NaiveTime::parse_from_str(parts[i], "%H:%M").ok();
+                    i += 1;
+                } else if parts[i].parse::<NaiveDate>().is_ok() {
+                    // Next part is a date -> end_date (multi-day event)
+                    end_date = NaiveDate::parse_from_str(parts[i], "%Y-%m-%d").ok();
+                    i += 1;
+
+                    // Check for end_time after end_date
+                    if i < parts.len() && parts[i].parse::<NaiveTime>().is_ok() {
+                        end_time = NaiveTime::parse_from_str(parts[i], "%H:%M").ok();
+                        i += 1;
+                    }
+                }
             }
+            continue;
+        }
+
+        // Check for multi-day all-day event: YYYY-MM-DD YYYY-MM-DD Title
+        // (no start_time, but second part is a date)
+        if start_time.is_none() && end_date.is_none() && part.parse::<NaiveDate>().is_ok() && i == 1
+        // second position after start date
+        {
+            end_date = NaiveDate::parse_from_str(part, "%Y-%m-%d").ok();
+            i += 1;
             continue;
         }
 
@@ -277,17 +326,23 @@ fn parse_event_line(line: &str) -> Option<Event> {
         date,
         start_time,
         end_time,
+        end_date,
         title,
         rrule,
         exceptions,
         tags,
         hashtags,
         location,
+        completed,
     })
 }
 
 fn format_event(event: &Event) -> String {
     let mut parts = Vec::new();
+
+    if event.completed {
+        parts.push("x".to_string());
+    }
 
     parts.push(event.date.format("%Y-%m-%d").to_string());
 
@@ -345,7 +400,11 @@ pub fn export_ics(calendar: &Calendar, path: &str) -> Result<(), CalchemyError> 
         };
 
         let end: CalendarDateTime = if let Some(time) = event.end_time {
-            let ndt = event.date.and_time(time);
+            let end_d = event.end_date.unwrap_or(event.date);
+            let ndt = end_d.and_time(time);
+            CalendarDateTime::from(ndt)
+        } else if let Some(end_d) = event.end_date {
+            let ndt = end_d.and_hms_opt(23, 59, 59).unwrap();
             CalendarDateTime::from(ndt)
         } else if event.start_time.is_none() {
             let ndt = event.date.and_hms_opt(23, 59, 59).unwrap();
@@ -430,12 +489,14 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
             start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
             end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: Some("office".to_string()),
+            completed: false,
         };
 
         let formatted = format_event(&event);
@@ -489,12 +550,14 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
             start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
             end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: None,
+            completed: false,
         });
 
         let temp_file = NamedTempFile::new().unwrap();
@@ -513,12 +576,14 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
             start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
             end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
+            completed: false,
         });
 
         let start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
@@ -542,12 +607,14 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
             start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
             end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
             exceptions: Vec::new(),
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: Some("office".to_string()),
+            completed: false,
         });
 
         let temp_file = NamedTempFile::new().unwrap();
