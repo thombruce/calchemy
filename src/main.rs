@@ -245,8 +245,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
 
                 println!(
-                    "[{}] {} {} {}{}",
-                    i, date_str, time_str, event.title, end_str
+                    "[{}] {} {}{} {}",
+                    i, date_str, time_str, end_str, event.title
                 );
                 if let Some(ref loc) = event.location {
                     println!("       @{}", loc);
