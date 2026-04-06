@@ -1,5 +1,6 @@
 use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeZone, Utc};
 use rrule::Tz;
+use std::cmp::Ordering;
 use thiserror::Error;
 
 pub mod tui;
@@ -62,7 +63,33 @@ impl Calendar {
     }
 
     pub fn save(&self, path: &str) -> Result<(), CalchemyError> {
-        let content = self.format();
+        let mut sorted_events = self.events.clone();
+        sorted_events.sort_by(|a, b| {
+            // First sort by completion status (open events before closed)
+            match a.completed.cmp(&b.completed) {
+                Ordering::Equal => {
+                    // Then by date
+                    match a.date.cmp(&b.date) {
+                        Ordering::Equal => {
+                            // Then by start time
+                            match (a.start_time, b.start_time) {
+                                (Some(t1), Some(t2)) => t1.cmp(&t2),
+                                (Some(_), None) => Ordering::Less,
+                                (None, Some(_)) => Ordering::Greater,
+                                (None, None) => Ordering::Equal,
+                            }
+                        }
+                        other => other,
+                    }
+                }
+                other => other,
+            }
+        });
+
+        let content = Calendar {
+            events: sorted_events,
+        }
+        .format();
         std::fs::write(path, content)?;
         Ok(())
     }
