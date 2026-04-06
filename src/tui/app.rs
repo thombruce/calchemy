@@ -26,6 +26,7 @@ pub struct App {
     input_buffer: String,
     quit: bool,
     path: Option<String>,
+    dirty: bool,
 }
 
 impl App {
@@ -42,6 +43,7 @@ impl App {
             input_buffer: String::new(),
             quit: false,
             path: None,
+            dirty: false,
         }
     }
 
@@ -62,10 +64,17 @@ impl App {
         }
     }
 
-    pub fn save_calendar(&mut self, path: &str) {
-        if let Err(e) = self.calendar.save(path) {
-            eprintln!("Error saving: {}", e);
+    pub fn save_calendar(&mut self) {
+        if !self.dirty {
+            return;
         }
+
+        if let Some(ref path) = self.path {
+            if let Err(e) = self.calendar.save(path) {
+                eprintln!("Error saving: {}", e);
+            }
+        }
+        self.dirty = false;
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -384,6 +393,7 @@ impl App {
             self.calendar.add_event(event);
             self.show_input = false;
             self.input_buffer.clear();
+            self.dirty = true;
             self.save();
         }
     }
@@ -394,6 +404,7 @@ impl App {
             if let Some((calendar_idx, _)) = day_events.get(idx) {
                 self.calendar.remove_event(*calendar_idx);
                 self.selected_event_index = None;
+                self.dirty = true;
                 self.save();
             }
         }
@@ -405,6 +416,7 @@ impl App {
             if let Some((calendar_idx, _)) = day_events.get(idx) {
                 self.calendar.events_mut()[*calendar_idx].completed = true;
                 self.selected_event_index = None;
+                self.dirty = true;
                 self.save();
             }
         }
@@ -416,6 +428,7 @@ impl App {
             if let Some((calendar_idx, _)) = day_events.get(idx) {
                 self.calendar.events_mut()[*calendar_idx].completed = false;
                 self.selected_event_index = None;
+                self.dirty = true;
                 self.save();
             }
         }

@@ -348,11 +348,29 @@ fn format_event(event: &Event) -> String {
 
     parts.push(event.date.format("%Y-%m-%d").to_string());
 
+    // Handle start_time
     if let Some(start) = event.start_time {
         parts.push(start.format("%H:%M").to_string());
+    }
 
+    // Handle end_time - for multi-day events, it goes after end_date
+    // For single-day events, it goes before end_date would be (but we don't have end_date)
+    let end_time_before_title = event.end_time.is_some() && event.end_date.is_none();
+    if end_time_before_title {
         if let Some(end) = event.end_time {
             parts.push(end.format("%H:%M").to_string());
+        }
+    }
+
+    // Handle multi-day events - output end_date (and end_time if present)
+    if let Some(end_date) = event.end_date {
+        parts.push(end_date.format("%Y-%m-%d").to_string());
+
+        // For multi-day with times, end_time goes after end_date
+        if event.end_date.is_some() && event.end_time.is_some() {
+            if let Some(end) = event.end_time {
+                parts.push(end.format("%H:%M").to_string());
+            }
         }
     }
 

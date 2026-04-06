@@ -361,7 +361,7 @@ fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new();
     app.load_calendar(path.to_str().unwrap());
     app.run()?;
-    app.save_calendar(path.to_str().unwrap());
+    app.save_calendar();
 
     Ok(())
 }
