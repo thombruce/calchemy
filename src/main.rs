@@ -216,6 +216,7 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 end_date,
                 title: title.clone(),
                 rrule: rrule.clone(),
+                every_keyword: None,
                 exceptions,
                 tags: tag.clone(),
                 hashtags: hashtag.clone(),
@@ -234,7 +235,8 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 calendar
                     .events()
                     .iter()
-                    .map(|e| calchemy::ExpandedEvent {
+                    .enumerate()
+                    .map(|(idx, e)| calchemy::ExpandedEvent {
                         date: e.date,
                         start_time: e.start_time,
                         end_time: e.end_time,
@@ -245,6 +247,7 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                         location: e.location.clone(),
                         is_exception: false,
                         completed: e.completed,
+                        original_event_index: idx,
                     })
                     .collect()
             } else if let Some(m) = month {

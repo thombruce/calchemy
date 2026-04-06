@@ -265,18 +265,39 @@ impl App {
     }
 
     fn get_events_for_day(&self, day: NaiveDate) -> Vec<String> {
+        let month_start = self.current_month;
+        let month_end = self.get_month_end();
+
+        let expanded = self
+            .calendar
+            .events_between(month_start, month_end)
+            .unwrap_or_default();
+
         let mut events = Vec::new();
 
-        for event in self.calendar.events() {
-            let in_range = if let Some(end_date) = event.end_date {
-                event.date <= day && end_date >= day
-            } else {
-                event.date == day
-            };
+        // Add expanded recurrence events
+        for exp in &expanded {
+            if exp.date == day {
+                if let Some(original) = self.calendar.events().get(exp.original_event_index) {
+                    let event_str = crate::format_expanded_event_for_display(exp, original);
+                    events.push(event_str);
+                }
+            }
+        }
 
-            if in_range {
-                let event_str = crate::format_event_for_display(event);
-                events.push(event_str);
+        // Add non-recurring multi-day events that span this day
+        for event in self.calendar.events().iter() {
+            if event.rrule.is_none() && event.every_keyword.is_none() {
+                if let Some(end_date) = event.end_date {
+                    if event.date <= day && end_date >= day {
+                        // Skip if already added via expanded events
+                        let already_added = events.iter().any(|s| s.contains(&event.title));
+                        if !already_added {
+                            let event_str = crate::format_event_for_display(event);
+                            events.push(event_str);
+                        }
+                    }
+                }
             }
         }
 
@@ -284,18 +305,39 @@ impl App {
     }
 
     fn get_events_with_indices_for_day(&self, day: NaiveDate) -> Vec<(usize, String)> {
+        let month_start = self.current_month;
+        let month_end = self.get_month_end();
+
+        let expanded = self
+            .calendar
+            .events_between(month_start, month_end)
+            .unwrap_or_default();
+
         let mut events = Vec::new();
 
-        for (idx, event) in self.calendar.events().iter().enumerate() {
-            let in_range = if let Some(end_date) = event.end_date {
-                event.date <= day && end_date >= day
-            } else {
-                event.date == day
-            };
+        // Add expanded recurrence events
+        for exp in &expanded {
+            if exp.date == day {
+                if let Some(original) = self.calendar.events().get(exp.original_event_index) {
+                    let event_str = crate::format_expanded_event_for_display(exp, original);
+                    events.push((exp.original_event_index, event_str));
+                }
+            }
+        }
 
-            if in_range {
-                let event_str = crate::format_event_for_display(event);
-                events.push((idx, event_str));
+        // Add non-recurring multi-day events that span this day
+        for (idx, event) in self.calendar.events().iter().enumerate() {
+            if event.rrule.is_none() && event.every_keyword.is_none() {
+                if let Some(end_date) = event.end_date {
+                    if event.date <= day && end_date >= day {
+                        // Skip if already added via expanded events
+                        let already_added = events.iter().any(|(_, s)| s.contains(&event.title));
+                        if !already_added {
+                            let event_str = crate::format_event_for_display(event);
+                            events.push((idx, event_str));
+                        }
+                    }
+                }
             }
         }
 
@@ -391,7 +433,13 @@ impl App {
         f.render_widget(calendar, main_chunks[0]);
 
         // Event list
-        let events = EventList::new(&self.calendar, self.selected_day, self.selected_event_index);
+        let events = EventList::new(
+            &self.calendar,
+            self.selected_day,
+            self.selected_event_index,
+            self.current_month,
+            self.get_month_end(),
+        );
         f.render_widget(events, main_chunks[1]);
 
         // Status bar
@@ -424,7 +472,6 @@ impl Default for App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveTime;
 
     fn make_test_event(date: NaiveDate, title: &str) -> crate::Event {
         crate::Event {
@@ -434,6 +481,7 @@ mod tests {
             end_date: None,
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
@@ -450,6 +498,7 @@ mod tests {
             end_date: Some(end),
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),

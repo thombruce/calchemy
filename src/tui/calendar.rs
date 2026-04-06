@@ -32,27 +32,44 @@ impl<'a> CalendarView<'a> {
         let month_start = self.current_month;
         let month_end = self.get_month_end();
 
-        for event in self.calendar.events() {
-            let event_start = event.date;
-            let event_end = event.end_date.unwrap_or(event.date);
-
-            // Skip if event doesn't overlap with this month
-            if event_end < month_start || event_start > month_end {
-                continue;
-            }
-
-            // Add all days in the overlap
-            let overlap_start = event_start.max(month_start);
-            let overlap_end = event_end.min(month_end);
-
-            let mut current = overlap_start;
-            while current <= overlap_end {
-                if !days.contains(&current) {
-                    days.push(current);
+        // Get expanded recurrence events (filter to current month)
+        if let Ok(expanded) = self.calendar.events_between(month_start, month_end) {
+            for exp in expanded {
+                if exp.date >= month_start && exp.date <= month_end {
+                    if !days.contains(&exp.date) {
+                        days.push(exp.date);
+                    }
                 }
-                current = current + chrono::Duration::days(1);
             }
         }
+
+        // Also handle non-recurring multi-day events
+        for event in self.calendar.events() {
+            if event.rrule.is_none() && event.every_keyword.is_none() {
+                if let Some(end_date) = event.end_date {
+                    let event_start = event.date;
+                    let event_end = end_date;
+
+                    // Skip if event doesn't overlap with this month
+                    if event_end < month_start || event_start > month_end {
+                        continue;
+                    }
+
+                    // Add all days in the overlap
+                    let overlap_start = event_start.max(month_start);
+                    let overlap_end = event_end.min(month_end);
+
+                    let mut current = overlap_start;
+                    while current <= overlap_end {
+                        if !days.contains(&current) {
+                            days.push(current);
+                        }
+                        current = current + chrono::Duration::days(1);
+                    }
+                }
+            }
+        }
+
         days
     }
 
@@ -155,6 +172,7 @@ mod tests {
             end_date: None,
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
@@ -171,6 +189,7 @@ mod tests {
             end_date: Some(end),
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),

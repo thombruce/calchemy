@@ -12,6 +12,8 @@ pub struct EventList<'a> {
     calendar: &'a Calendar,
     selected_day: Option<NaiveDate>,
     selected_index: Option<usize>,
+    month_start: NaiveDate,
+    month_end: NaiveDate,
 }
 
 impl<'a> EventList<'a> {
@@ -19,28 +21,49 @@ impl<'a> EventList<'a> {
         calendar: &'a Calendar,
         selected_day: Option<NaiveDate>,
         selected_index: Option<usize>,
+        month_start: NaiveDate,
+        month_end: NaiveDate,
     ) -> Self {
         Self {
             calendar,
             selected_day,
             selected_index,
+            month_start,
+            month_end,
         }
     }
 
     pub fn get_events_for_day(&self, day: NaiveDate) -> Vec<String> {
         let mut events = Vec::new();
 
-        for event in self.calendar.events() {
-            // Check if day falls within event's date range
-            let in_range = if let Some(end_date) = event.end_date {
-                event.date <= day && end_date >= day
-            } else {
-                event.date == day
-            };
+        // Get expanded recurrence events
+        if let Ok(expanded) = self
+            .calendar
+            .events_between(self.month_start, self.month_end)
+        {
+            for exp in expanded {
+                if exp.date == day {
+                    if let Some(original) = self.calendar.events().get(exp.original_event_index) {
+                        let event_str = crate::format_expanded_event_for_display(&exp, original);
+                        events.push(event_str);
+                    }
+                }
+            }
+        }
 
-            if in_range {
-                let event_str = crate::format_event_for_display(event);
-                events.push(event_str);
+        // Also handle non-recurring multi-day events
+        for event in self.calendar.events() {
+            if event.rrule.is_none() && event.every_keyword.is_none() {
+                if let Some(end_date) = event.end_date {
+                    if event.date <= day && end_date >= day {
+                        // Skip if already added via expanded events
+                        let already_added = events.iter().any(|s| s.contains(&event.title));
+                        if !already_added {
+                            let event_str = crate::format_event_for_display(event);
+                            events.push(event_str);
+                        }
+                    }
+                }
             }
         }
 
@@ -115,6 +138,7 @@ mod tests {
             end_date: None,
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
@@ -136,6 +160,7 @@ mod tests {
             end_date: None,
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
@@ -152,6 +177,7 @@ mod tests {
             end_date: Some(end),
             title: title.to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
             tags: Vec::new(),
             hashtags: Vec::new(),
@@ -171,13 +197,27 @@ mod tests {
             cal
         }
 
+        fn make_event_list(
+            calendar: &Calendar,
+            selected_day: Option<NaiveDate>,
+            selected_index: Option<usize>,
+        ) -> EventList {
+            EventList::new(
+                calendar,
+                selected_day,
+                selected_index,
+                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 31).unwrap(),
+            )
+        }
+
         #[test]
         fn test_get_events_for_day_single_day() {
             let cal = make_calendar_with_events(vec![make_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "Event 1",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -196,7 +236,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 3, 18).unwrap(),
                 "Multi Day",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -219,7 +259,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "Event",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -237,7 +277,7 @@ mod tests {
                 make_event(NaiveDate::from_ymd_opt(2024, 3, 16).unwrap(), "Day 16"),
                 make_event(NaiveDate::from_ymd_opt(2024, 3, 17).unwrap(), "Day 17"),
             ]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -262,13 +302,27 @@ mod tests {
             cal
         }
 
+        fn make_event_list(
+            calendar: &Calendar,
+            selected_day: Option<NaiveDate>,
+            selected_index: Option<usize>,
+        ) -> EventList {
+            EventList::new(
+                calendar,
+                selected_day,
+                selected_index,
+                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 31).unwrap(),
+            )
+        }
+
         #[test]
         fn test_format_single_day_no_times() {
             let cal = make_calendar_with_events(vec![make_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "All Day Event",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -290,7 +344,7 @@ mod tests {
                 None,
                 "Morning Event",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -310,7 +364,7 @@ mod tests {
                 Some("10:30"),
                 "Meeting",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -330,7 +384,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 3, 18).unwrap(),
                 "Conference",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -351,6 +405,7 @@ mod tests {
                 end_date: Some(NaiveDate::from_ymd_opt(2024, 3, 18).unwrap()),
                 title: "Conference".to_string(),
                 rrule: None,
+                every_keyword: None,
                 exceptions: Vec::new(),
                 tags: Vec::new(),
                 hashtags: Vec::new(),
@@ -359,7 +414,7 @@ mod tests {
             };
 
             let cal = make_calendar_with_events(vec![event]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -378,7 +433,7 @@ mod tests {
             let mut event = make_event(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(), "Done Task");
             event.completed = true;
             let cal = make_calendar_with_events(vec![event]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
@@ -398,7 +453,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "Pending Task",
             )]);
-            let list = EventList::new(
+            let list = make_event_list(
                 &cal,
                 Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
                 None,
