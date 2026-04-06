@@ -426,6 +426,53 @@ fn format_event(event: &Event) -> String {
     parts.join(" ")
 }
 
+pub fn format_event_for_display(event: &Event) -> String {
+    let start_time_str = event.start_time.map(|t| t.format("%H:%M").to_string());
+    let end_time_str = event.end_time.map(|t| t.format("%H:%M").to_string());
+
+    let time_display = match (&start_time_str, &end_time_str) {
+        (Some(start), Some(end)) => format!("{}-{}", start, end),
+        (Some(start), None) => start.clone(),
+        (None, Some(end)) => format!("-{}", end),
+        (None, None) => String::new(),
+    };
+
+    let completed_mark = if event.completed { "x " } else { " " };
+    let date_time_str = if let Some(end_date) = event.end_date {
+        if end_date != event.date {
+            if !time_display.is_empty() {
+                format!(
+                    "{} {} - {} {}",
+                    event.date.format("%Y-%m-%d"),
+                    start_time_str.unwrap(),
+                    end_date.format("%Y-%m-%d"),
+                    end_time_str.unwrap()
+                )
+            } else {
+                format!(
+                    "{} - {}",
+                    event.date.format("%Y-%m-%d"),
+                    end_date.format("%Y-%m-%d")
+                )
+            }
+        } else {
+            if !time_display.is_empty() {
+                format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
+            } else {
+                event.date.format("%Y-%m-%d").to_string()
+            }
+        }
+    } else {
+        if !time_display.is_empty() {
+            format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
+        } else {
+            event.date.format("%Y-%m-%d").to_string()
+        }
+    };
+
+    format!("{} [{}] {}", completed_mark, date_time_str, event.title)
+}
+
 pub fn export_ics(calendar: &Calendar, path: &str) -> Result<(), CalchemyError> {
     use icalendar::{Calendar, CalendarDateTime, Component, Event};
 

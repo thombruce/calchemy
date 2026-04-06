@@ -275,57 +275,7 @@ impl App {
             };
 
             if in_range {
-                let completed_mark = if event.completed { "x " } else { " " };
-
-                // Build time strings for start and end
-                let start_time_str = event.start_time.map(|t| t.format("%H:%M").to_string());
-                let end_time_str = event.end_time.map(|t| t.format("%H:%M").to_string());
-
-                // Build time display based on which times are provided
-                let time_display = match (&start_time_str, &end_time_str) {
-                    (Some(start), Some(end)) => format!("{}-{}", start, end),
-                    (Some(start), None) => start.clone(),
-                    (None, Some(end)) => format!("-{}", end),
-                    (None, None) => String::new(),
-                };
-
-                // Build date/time string based on whether it's multi-day
-                let date_time_str = if let Some(end_date) = event.end_date {
-                    if end_date != event.date {
-                        // Multi-day event
-                        if !time_display.is_empty() {
-                            format!(
-                                "{} {} - {} {}",
-                                event.date.format("%Y-%m-%d"),
-                                start_time_str.unwrap(),
-                                end_date.format("%Y-%m-%d"),
-                                end_time_str.unwrap()
-                            )
-                        } else {
-                            format!(
-                                "{} - {}",
-                                event.date.format("%Y-%m-%d"),
-                                end_date.format("%Y-%m-%d")
-                            )
-                        }
-                    } else {
-                        // Single-day with end_date (same as start)
-                        if !time_display.is_empty() {
-                            format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
-                        } else {
-                            event.date.format("%Y-%m-%d").to_string()
-                        }
-                    }
-                } else {
-                    // Single-day event
-                    if !time_display.is_empty() {
-                        format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
-                    } else {
-                        event.date.format("%Y-%m-%d").to_string()
-                    }
-                };
-
-                let event_str = format!("{}[{}] {}", completed_mark, date_time_str, event.title);
+                let event_str = crate::format_event_for_display(event);
                 events.push(event_str);
             }
         }
@@ -344,57 +294,7 @@ impl App {
             };
 
             if in_range {
-                let completed_mark = if event.completed { "x " } else { " " };
-
-                // Build time strings for start and end
-                let start_time_str = event.start_time.map(|t| t.format("%H:%M").to_string());
-                let end_time_str = event.end_time.map(|t| t.format("%H:%M").to_string());
-
-                // Build time display based on which times are provided
-                let time_display = match (&start_time_str, &end_time_str) {
-                    (Some(start), Some(end)) => format!("{}-{}", start, end),
-                    (Some(start), None) => start.clone(),
-                    (None, Some(end)) => format!("-{}", end),
-                    (None, None) => String::new(),
-                };
-
-                // Build date/time string based on whether it's multi-day
-                let date_time_str = if let Some(end_date) = event.end_date {
-                    if end_date != event.date {
-                        // Multi-day event
-                        if !time_display.is_empty() {
-                            format!(
-                                "{} {} - {} {}",
-                                event.date.format("%Y-%m-%d"),
-                                start_time_str.unwrap(),
-                                end_date.format("%Y-%m-%d"),
-                                end_time_str.unwrap()
-                            )
-                        } else {
-                            format!(
-                                "{} - {}",
-                                event.date.format("%Y-%m-%d"),
-                                end_date.format("%Y-%m-%d")
-                            )
-                        }
-                    } else {
-                        // Single-day with end_date (same as start)
-                        if !time_display.is_empty() {
-                            format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
-                        } else {
-                            event.date.format("%Y-%m-%d").to_string()
-                        }
-                    }
-                } else {
-                    // Single-day event
-                    if !time_display.is_empty() {
-                        format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
-                    } else {
-                        event.date.format("%Y-%m-%d").to_string()
-                    }
-                };
-
-                let event_str = format!("{}[{}] {}", completed_mark, date_time_str, event.title);
+                let event_str = crate::format_event_for_display(event);
                 events.push((idx, event_str));
             }
         }
