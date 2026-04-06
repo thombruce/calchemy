@@ -52,26 +52,28 @@ impl<'a> EventList<'a> {
                 let completed_mark = if event.completed { "x " } else { " " };
 
                 // Build time strings for start and end
-                let start_time_str = event
-                    .start_time
-                    .map(|t| t.format("%H:%M").to_string())
-                    .unwrap_or_else(|| "all-day".to_string());
-                let end_time_str = event
-                    .end_time
-                    .map(|t| t.format("%H:%M").to_string())
-                    .unwrap_or_else(|| "all-day".to_string());
+                let start_time_str = event.start_time.map(|t| t.format("%H:%M").to_string());
+                let end_time_str = event.end_time.map(|t| t.format("%H:%M").to_string());
+
+                // Build time display based on which times are provided
+                let time_display = match (&start_time_str, &end_time_str) {
+                    (Some(start), Some(end)) => format!("{}-{}", start, end),
+                    (Some(start), None) => start.clone(),
+                    (None, Some(end)) => format!("-{}", end),
+                    (None, None) => String::new(),
+                };
 
                 // Build date/time string based on whether it's multi-day
                 let date_time_str = if let Some(end_date) = event.end_date {
                     if end_date != event.date {
                         // Multi-day event
-                        if event.start_time.is_some() {
+                        if !time_display.is_empty() {
                             format!(
                                 "{} {} - {} {}",
                                 event.date.format("%Y-%m-%d"),
-                                start_time_str,
+                                start_time_str.unwrap(),
                                 end_date.format("%Y-%m-%d"),
-                                end_time_str
+                                end_time_str.unwrap()
                             )
                         } else {
                             format!(
@@ -82,21 +84,19 @@ impl<'a> EventList<'a> {
                         }
                     } else {
                         // Single-day with end_date (same as start)
-                        format!(
-                            "{} {}-{}",
-                            event.date.format("%Y-%m-%d"),
-                            start_time_str,
-                            end_time_str
-                        )
+                        if !time_display.is_empty() {
+                            format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
+                        } else {
+                            event.date.format("%Y-%m-%d").to_string()
+                        }
                     }
                 } else {
                     // Single-day event
-                    format!(
-                        "{} {}-{}",
-                        event.date.format("%Y-%m-%d"),
-                        start_time_str,
-                        end_time_str
-                    )
+                    if !time_display.is_empty() {
+                        format!("{} {}", event.date.format("%Y-%m-%d"), time_display)
+                    } else {
+                        event.date.format("%Y-%m-%d").to_string()
+                    }
                 };
 
                 let event_str = format!("[{}] {}", date_time_str, event.title);
@@ -323,7 +323,7 @@ mod tests {
         }
 
         #[test]
-        fn test_format_single_day_all_day_event() {
+        fn test_format_single_day_no_times() {
             let cal = make_calendar_with_events(vec![make_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "All Day Event",
@@ -336,9 +336,10 @@ mod tests {
 
             let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
+            // New format: [2024-03-15] Title - no "all-day" shown
             assert!(events[0].contains("2024-03-15"));
-            assert!(events[0].contains("all-day"));
             assert!(events[0].contains("All Day Event"));
+            assert!(!events[0].contains("all-day"));
         }
 
         #[test]
