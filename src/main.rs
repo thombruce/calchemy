@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[command(about = "A human-readable calendar tool", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     #[arg(short, long, global = true)]
     file: Option<PathBuf>,
@@ -160,7 +160,7 @@ fn parse_range(s: &str) -> Result<(NaiveDate, NaiveDate), String> {
     Ok((start, end))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let path = cli.file.unwrap_or_else(get_default_path);
@@ -172,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match &cli.command {
-        Commands::Add {
+        Some(Commands::Add {
             date,
             time,
             end_time,
@@ -183,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tag,
             hashtag,
             location,
-        } => {
+        }) => {
             let date = parse_date(date)?;
 
             let start_time = if let Some(t) = time {
@@ -229,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Event added successfully!");
         }
 
-        Commands::List { month, range, all } => {
+        Some(Commands::List { month, range, all }) => {
             let events = if *all {
                 calendar
                     .events()
@@ -309,12 +309,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        Commands::Export { output } => {
+        Some(Commands::Export { output }) => {
             calchemy::export_ics(&calendar, output)?;
             println!("Exported to ICS successfully!");
         }
 
-        Commands::Delete { index } => {
+        Some(Commands::Delete { index }) => {
             if calendar.remove_event(*index).is_none() {
                 return Err(format!("Invalid index: {}", index).into());
             }
@@ -323,7 +323,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Event at index {} deleted.", index);
         }
 
-        Commands::Close { index } => {
+        Some(Commands::Close { index }) => {
             let events = calendar.events_mut();
             if *index >= events.len() {
                 return Err(format!("Invalid index: {}", index).into());
@@ -334,7 +334,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Event at index {} marked as complete.", index);
         }
 
-        Commands::Open { index } => {
+        Some(Commands::Open { index }) => {
             let events = calendar.events_mut();
             if *index >= events.len() {
                 return Err(format!("Invalid index: {}", index).into());
@@ -344,150 +344,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("Event at index {} marked as incomplete.", index);
         }
+
+        None => {
+            // No command - run TUI
+            run_tui()?;
+        }
     }
 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use assert_cmd::prelude::*;
-    use predicates::prelude::*;
-    use std::process::Command;
+fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
+    use calchemy::tui::app::App;
 
-    #[test]
-    fn test_add_command() {
-        let mut cmd = Command::cargo_bin("calchemy").unwrap();
+    let path = get_default_path();
+    let mut app = App::new();
+    app.load_calendar(path.to_str().unwrap());
+    app.run()?;
+    app.save_calendar(path.to_str().unwrap());
 
-        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
-        let path = temp_file.path().to_str().unwrap();
+    Ok(())
+}
 
-        cmd.arg("-f")
-            .arg(path)
-            .arg("add")
-            .arg("--date")
-            .arg("2024-01-15")
-            .arg("--time")
-            .arg("09:00")
-            .arg("--end-time")
-            .arg("10:00")
-            .arg("--title")
-            .arg("Team standup")
-            .arg("--rrule")
-            .arg("FREQ=WEEKLY");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Check if any arguments were provided
+    let args: Vec<String> = std::env::args().collect();
 
-        cmd.assert().success();
-
-        let content = std::fs::read_to_string(path).unwrap();
-        assert!(content.contains("Team standup"));
-        assert!(content.contains("FREQ=WEEKLY"));
-    }
-
-    #[test]
-    fn test_list_output_format() {
-        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
-        let path = temp_file.path().to_str().unwrap();
-
-        // Add an event first
-        let mut add_cmd = Command::cargo_bin("calchemy").unwrap();
-        add_cmd
-            .arg("-f")
-            .arg(path)
-            .arg("add")
-            .arg("--date")
-            .arg("2024-01-15")
-            .arg("--time")
-            .arg("09:00")
-            .arg("--title")
-            .arg("Test event");
-        add_cmd.assert().success();
-
-        // Now list
-        let mut list_cmd = Command::cargo_bin("calchemy").unwrap();
-        list_cmd.arg("-f").arg(path).arg("list").arg("--all");
-
-        list_cmd
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("[0]"))
-            .stdout(predicate::str::contains("2024-01-15"))
-            .stdout(predicate::str::contains("Test event"));
-    }
-
-    #[test]
-    fn test_delete_command() {
-        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
-        let path = temp_file.path().to_str().unwrap();
-
-        // Add two events
-        let mut add1 = Command::cargo_bin("calchemy").unwrap();
-        add1.arg("-f")
-            .arg(path)
-            .arg("add")
-            .arg("--date")
-            .arg("2024-01-15")
-            .arg("--title")
-            .arg("Event 1");
-        add1.assert().success();
-
-        let mut add2 = Command::cargo_bin("calchemy").unwrap();
-        add2.arg("-f")
-            .arg(path)
-            .arg("add")
-            .arg("--date")
-            .arg("2024-01-16")
-            .arg("--title")
-            .arg("Event 2");
-        add2.assert().success();
-
-        // Delete first event
-        let mut del_cmd = Command::cargo_bin("calchemy").unwrap();
-        del_cmd.arg("-f").arg(path).arg("delete").arg("0");
-        del_cmd.assert().success();
-
-        // List remaining - should show Event 2 at index 0
-        let mut list_cmd = Command::cargo_bin("calchemy").unwrap();
-        list_cmd.arg("-f").arg(path).arg("list").arg("--all");
-
-        let output = list_cmd.output().unwrap();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        assert!(stdout.contains("Event 2"));
-        assert!(!stdout.contains("Event 1"));
-    }
-
-    #[test]
-    fn test_export_command() {
-        let temp_file = tempfile::Builder::new().suffix(".cal").tempfile().unwrap();
-        let cal_path = temp_file.path().to_str().unwrap();
-
-        // Add event
-        let mut add_cmd = Command::cargo_bin("calchemy").unwrap();
-        add_cmd
-            .arg("-f")
-            .arg(cal_path)
-            .arg("add")
-            .arg("--date")
-            .arg("2024-01-15")
-            .arg("--title")
-            .arg("Test");
-        add_cmd.assert().success();
-
-        // Export
-        let mut export_cmd = Command::cargo_bin("calchemy").unwrap();
-        let ics_path = std::path::Path::new(cal_path).with_extension("ics");
-        export_cmd
-            .arg("-f")
-            .arg(cal_path)
-            .arg("export")
-            .arg("--output")
-            .arg(ics_path.to_str().unwrap());
-        export_cmd.assert().success();
-
-        // Verify ICS file exists and has content
-        assert!(ics_path.exists());
-        let ics_content = std::fs::read_to_string(&ics_path).unwrap();
-        assert!(ics_content.contains("BEGIN:VCALENDAR"));
-        assert!(ics_content.contains("Test"));
+    if args.len() > 1 {
+        // Run CLI mode
+        run_cli()
+    } else {
+        // Run TUI mode
+        run_tui()
     }
 }

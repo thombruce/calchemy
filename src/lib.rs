@@ -2,6 +2,8 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeZone, Utc};
 use rrule::Tz;
 use thiserror::Error;
 
+pub mod tui;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub date: NaiveDate,
@@ -193,7 +195,7 @@ impl Default for Calendar {
     }
 }
 
-fn parse_event_line(line: &str) -> Option<Event> {
+pub fn parse_event_line(line: &str) -> Option<Event> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 2 {
         return None;
