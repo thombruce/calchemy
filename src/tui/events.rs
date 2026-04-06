@@ -99,7 +99,7 @@ impl<'a> EventList<'a> {
                     }
                 };
 
-                let event_str = format!("[{}] {}", date_time_str, event.title);
+                let event_str = format!("{} [{}] {}", completed_mark, date_time_str, event.title);
                 events.push(event_str);
             }
         }
@@ -403,7 +403,7 @@ mod tests {
         }
 
         #[test]
-        fn test_format_completed_event_shows_in_brackets() {
+        fn test_format_completed_event_shows_x_prefix() {
             let mut event = make_event(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(), "Done Task");
             event.completed = true;
             let cal = make_calendar_with_events(vec![event]);
@@ -415,14 +415,14 @@ mod tests {
 
             let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
-            // New format: [2024-03-15 all-day] Title
-            assert!(events[0].starts_with("["));
+            // Format: x [2024-03-15] Title
+            assert!(events[0].starts_with("x "));
             assert!(events[0].contains("2024-03-15"));
             assert!(events[0].contains("Done Task"));
         }
 
         #[test]
-        fn test_incomplete_event_shows_in_brackets() {
+        fn test_incomplete_event_shows_space_prefix() {
             let cal = make_calendar_with_events(vec![make_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "Pending Task",
@@ -435,8 +435,8 @@ mod tests {
 
             let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
-            // New format: [2024-03-15 all-day] Title
-            assert!(events[0].starts_with("["));
+            // Format:   [2024-03-15] Title (starts with space)
+            assert!(events[0].starts_with(" "));
             assert!(events[0].contains("2024-03-15"));
             assert!(events[0].contains("Pending Task"));
         }
