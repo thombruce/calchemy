@@ -115,24 +115,29 @@ impl<'a> Widget for CalendarView<'a> {
             let x = inner.x + (col as u16) * cell_width as u16;
             let y = inner.y + 1 + (row as u16) * row_height as u16;
 
+            // Build base style with today and selected day styling
             let mut style = Style::default();
 
-            // Highlight today
+            // Highlight today - bold + underline (no background)
             if day_date == today {
-                style = style.bold();
+                style = style.bold().underlined();
             }
 
-            // Highlight selected day
+            // Highlight selected day (most important - keep as-is)
             if self.selected_day == Some(day_date) {
                 style = style.bg(Color::LightBlue).fg(Color::Black);
             }
 
-            // Highlight days with events
-            if events.contains(&day_date) {
-                style = style.underlined();
-            }
-
-            let day_str = format!("{:2}", day);
+            // Highlight days with events - add indicator symbol after date
+            let day_str = if events.contains(&day_date) {
+                // Add light blue color to event days (but not override selected day bg)
+                if self.selected_day != Some(day_date) {
+                    style = style.fg(Color::LightBlue);
+                }
+                format!("{:1}•", day)
+            } else {
+                format!("{:1} ", day)
+            };
             buf.set_string(x, y, day_str, style);
         }
     }
