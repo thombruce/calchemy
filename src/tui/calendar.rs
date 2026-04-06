@@ -90,7 +90,7 @@ impl<'a> Widget for CalendarView<'a> {
 
         for (i, day) in days.iter().enumerate() {
             let x = inner.x + (i as u16) * cell_width as u16;
-            buf.set_string(x, inner.y, day, Style::default().fg(Color::LightBlue));
+            buf.set_string(x, inner.y, day, Style::default().fg(Color::DarkGray));
         }
 
         let events = self.get_days_with_events();
@@ -146,7 +146,6 @@ impl<'a> Widget for CalendarView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     fn make_event(date: NaiveDate, title: &str) -> crate::Event {
         crate::Event {
