@@ -146,7 +146,7 @@ impl<'a> Widget for CalendarView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveTime;
+    
 
     fn make_event(date: NaiveDate, title: &str) -> crate::Event {
         crate::Event {

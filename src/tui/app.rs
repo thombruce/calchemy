@@ -370,7 +370,7 @@ impl App {
                 Constraint::Min(0),
                 Constraint::Length(3),
             ])
-            .split(f.size());
+            .split(f.area());
 
         // Title bar
         let title = format!("Calchemy - {}", self.current_month.format("%B %Y"));
@@ -409,7 +409,7 @@ impl App {
         // Input dialog overlay
         if self.show_input {
             let input = InputDialog::new(&self.input_buffer);
-            let area = Rect::new((f.size().width - 50) / 2, (f.size().height - 5) / 2, 50, 5);
+            let area = Rect::new((f.area().width - 50) / 2, (f.area().height - 5) / 2, 50, 5);
             f.render_widget(input, area);
         }
     }
@@ -418,20 +418,6 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn add_event_with_input(app: &mut App, input: &str) {
-    if input.is_empty() {
-        app.show_input = false;
-        return;
-    }
-
-    if let Some(event) = parse_event_line(input) {
-        app.calendar.add_event(event);
-        app.show_input = false;
-        app.input_buffer.clear();
-        app.save();
     }
 }
 
@@ -445,27 +431,6 @@ mod tests {
             date,
             start_time: None,
             end_time: None,
-            end_date: None,
-            title: title.to_string(),
-            rrule: None,
-            exceptions: Vec::new(),
-            tags: Vec::new(),
-            hashtags: Vec::new(),
-            location: None,
-            completed: false,
-        }
-    }
-
-    fn make_test_event_with_time(
-        date: NaiveDate,
-        start: &str,
-        end: &str,
-        title: &str,
-    ) -> crate::Event {
-        crate::Event {
-            date,
-            start_time: NaiveTime::parse_from_str(start, "%H:%M").ok(),
-            end_time: NaiveTime::parse_from_str(end, "%H:%M").ok(),
             end_date: None,
             title: title.to_string(),
             rrule: None,
@@ -877,7 +842,20 @@ mod tests {
 
     mod event_operations {
         use super::*;
-        use tempfile::NamedTempFile;
+
+        fn add_event_with_input(app: &mut App, input: &str) {
+            if input.is_empty() {
+                app.show_input = false;
+                return;
+            }
+
+            if let Some(event) = parse_event_line(input) {
+                app.calendar.add_event(event);
+                app.show_input = false;
+                app.input_buffer.clear();
+                app.save();
+            }
+        }
 
         #[test]
         fn test_add_event_parses_and_adds_to_calendar() {
@@ -1160,7 +1138,7 @@ mod tests {
 
         #[test]
         fn test_get_events_for_day_no_events_returns_empty() {
-            let mut app = App::new();
+            let app = App::new();
 
             let events = app.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
