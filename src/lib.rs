@@ -554,6 +554,47 @@ mod tests {
     }
 
     #[test]
+    fn test_format_multi_day_event() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: Some(NaiveDate::from_ymd_opt(2024, 3, 18).unwrap()),
+            title: "Conference".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        // Should contain start and end dates
+        assert!(formatted.contains("2024-03-15 2024-03-18"));
+    }
+
+    #[test]
+    fn test_format_completed_event() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Done Task".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: true,
+        };
+
+        let formatted = format_event(&event);
+        assert!(formatted.starts_with("x "));
+    }
+
+    #[test]
     fn test_parse_exception() {
         let line = "2024-05-27 07:00 Bin collection rrule:FREQ=WEEKLY exdate:2024-05-24";
         let event = parse_event_line(line).unwrap();
@@ -674,5 +715,117 @@ mod tests {
         assert!(content.contains("SUMMARY:Team standup"));
         assert!(content.contains("RRULE:FREQ=WEEKLY"));
         assert!(content.contains("LOCATION:office"));
+    }
+
+    #[test]
+    fn test_save_sorts_open_before_closed() {
+        use tempfile::NamedTempFile;
+
+        let mut cal = Calendar::new();
+
+        // Add closed event first (earlier date)
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Closed event".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: true,
+        });
+
+        // Add open event (later date)
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Open event".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        });
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        cal.save(path).unwrap();
+
+        let loaded = Calendar::load(path).unwrap();
+        let events = loaded.events();
+
+        // Open event should come first (despite later date)
+        assert!(!events[0].completed);
+        assert!(events[0].title.contains("Open event"));
+        assert!(events[1].completed);
+        assert!(events[1].title.contains("Closed event"));
+    }
+
+    #[test]
+    fn test_save_sorts_by_date_and_time() {
+        use tempfile::NamedTempFile;
+
+        let mut cal = Calendar::new();
+
+        // Add events in random order
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: Some(NaiveTime::from_hms_opt(14, 0, 0).unwrap()),
+            end_time: None,
+            end_date: None,
+            title: "Afternoon meeting".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        });
+
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: None,
+            end_date: None,
+            title: "Morning meeting".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        });
+
+        cal.add_event(Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 20).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Later event".to_string(),
+            rrule: None,
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        });
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_str().unwrap();
+        cal.save(path).unwrap();
+
+        let loaded = Calendar::load(path).unwrap();
+        let events = loaded.events();
+
+        // Verify order: 9:00, 14:00, then 1/20
+        assert!(events[0].title.contains("Morning meeting"));
+        assert!(events[1].title.contains("Afternoon meeting"));
+        assert!(events[2].title.contains("Later event"));
     }
 }

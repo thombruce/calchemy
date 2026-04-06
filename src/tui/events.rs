@@ -403,6 +403,37 @@ mod tests {
         }
 
         #[test]
+        fn test_format_multi_day_with_times() {
+            let event = crate::Event {
+                date: NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+                end_time: Some(NaiveTime::from_hms_opt(17, 0, 0).unwrap()),
+                end_date: Some(NaiveDate::from_ymd_opt(2024, 3, 18).unwrap()),
+                title: "Conference".to_string(),
+                rrule: None,
+                exceptions: Vec::new(),
+                tags: Vec::new(),
+                hashtags: Vec::new(),
+                location: None,
+                completed: false,
+            };
+
+            let cal = make_calendar_with_events(vec![event]);
+            let list = EventList::new(
+                &cal,
+                Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()),
+                None,
+            );
+
+            let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+
+            // Verify format: [2024-03-15 09:00 - 2024-03-18 17:00] Conference
+            assert!(events[0].contains("2024-03-15 09:00"));
+            assert!(events[0].contains("2024-03-18 17:00"));
+            assert!(events[0].contains("Conference"));
+        }
+
+        #[test]
         fn test_format_completed_event_shows_x_prefix() {
             let mut event = make_event(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(), "Done Task");
             event.completed = true;
