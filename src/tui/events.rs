@@ -51,32 +51,55 @@ impl<'a> EventList<'a> {
 
                 let completed_mark = if event.completed { "x " } else { " " };
 
-                // Show end date for multi-day events
-                let date_range_str = if let Some(end_date) = event.end_date {
+                // Build time strings for start and end
+                let start_time_str = event
+                    .start_time
+                    .map(|t| t.format("%H:%M").to_string())
+                    .unwrap_or_else(|| "all-day".to_string());
+                let end_time_str = event
+                    .end_time
+                    .map(|t| t.format("%H:%M").to_string())
+                    .unwrap_or_else(|| "all-day".to_string());
+
+                // Build date/time string based on whether it's multi-day
+                let date_time_str = if let Some(end_date) = event.end_date {
                     if end_date != event.date {
-                        format!(
-                            "{} - {}",
-                            event.date.format("%Y-%m-%d"),
-                            end_date.format("%Y-%m-%d")
-                        )
+                        // Multi-day event
+                        if event.start_time.is_some() {
+                            format!(
+                                "{} {} - {} {}",
+                                event.date.format("%Y-%m-%d"),
+                                start_time_str,
+                                end_date.format("%Y-%m-%d"),
+                                end_time_str
+                            )
+                        } else {
+                            format!(
+                                "{} - {}",
+                                event.date.format("%Y-%m-%d"),
+                                end_date.format("%Y-%m-%d")
+                            )
+                        }
                     } else {
-                        event.date.format("%Y-%m-%d").to_string()
+                        // Single-day with end_date (same as start)
+                        format!(
+                            "{} {}-{}",
+                            event.date.format("%Y-%m-%d"),
+                            start_time_str,
+                            end_time_str
+                        )
                     }
                 } else {
-                    event.date.format("%Y-%m-%d").to_string()
+                    // Single-day event
+                    format!(
+                        "{} {}-{}",
+                        event.date.format("%Y-%m-%d"),
+                        start_time_str,
+                        end_time_str
+                    )
                 };
 
-                let event_str = format!(
-                    "{}[{}{}] {}",
-                    completed_mark,
-                    date_range_str,
-                    if event.end_time.is_some() {
-                        format!(" {}{}", time_str, end_time_str)
-                    } else {
-                        time_str
-                    },
-                    event.title
-                );
+                let event_str = format!("[{}] {}", date_time_str, event.title);
                 events.push(event_str);
             }
         }
@@ -379,7 +402,7 @@ mod tests {
         }
 
         #[test]
-        fn test_format_completed_event_shows_x_prefix() {
+        fn test_format_completed_event_shows_in_brackets() {
             let mut event = make_event(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(), "Done Task");
             event.completed = true;
             let cal = make_calendar_with_events(vec![event]);
@@ -391,12 +414,14 @@ mod tests {
 
             let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
-            assert!(events[0].starts_with("x "));
+            // New format: [2024-03-15 all-day] Title
+            assert!(events[0].starts_with("["));
+            assert!(events[0].contains("2024-03-15"));
             assert!(events[0].contains("Done Task"));
         }
 
         #[test]
-        fn test_incomplete_event_shows_space_prefix() {
+        fn test_incomplete_event_shows_in_brackets() {
             let cal = make_calendar_with_events(vec![make_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 "Pending Task",
@@ -409,7 +434,10 @@ mod tests {
 
             let events = list.get_events_for_day(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
 
-            assert!(events[0].starts_with(" "));
+            // New format: [2024-03-15 all-day] Title
+            assert!(events[0].starts_with("["));
+            assert!(events[0].contains("2024-03-15"));
+            assert!(events[0].contains("Pending Task"));
         }
     }
 }

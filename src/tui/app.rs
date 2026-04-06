@@ -275,43 +275,57 @@ impl App {
             };
 
             if in_range {
-                let time_str = event
+                let completed_mark = if event.completed { "x " } else { " " };
+
+                // Build time strings for start and end
+                let start_time_str = event
                     .start_time
                     .map(|t| t.format("%H:%M").to_string())
                     .unwrap_or_else(|| "all-day".to_string());
-
                 let end_time_str = event
                     .end_time
-                    .map(|t| format!("-{}", t.format("%H:%M")))
-                    .unwrap_or_default();
+                    .map(|t| t.format("%H:%M").to_string())
+                    .unwrap_or_else(|| "all-day".to_string());
 
-                let completed_mark = if event.completed { "x " } else { " " };
-
-                let date_range_str = if let Some(end_date) = event.end_date {
+                // Build date/time string based on whether it's multi-day
+                let date_time_str = if let Some(end_date) = event.end_date {
                     if end_date != event.date {
-                        format!(
-                            "{} - {}",
-                            event.date.format("%Y-%m-%d"),
-                            end_date.format("%Y-%m-%d")
-                        )
+                        // Multi-day event
+                        if event.start_time.is_some() {
+                            format!(
+                                "{} {} - {} {}",
+                                event.date.format("%Y-%m-%d"),
+                                start_time_str,
+                                end_date.format("%Y-%m-%d"),
+                                end_time_str
+                            )
+                        } else {
+                            format!(
+                                "{} - {}",
+                                event.date.format("%Y-%m-%d"),
+                                end_date.format("%Y-%m-%d")
+                            )
+                        }
                     } else {
-                        event.date.format("%Y-%m-%d").to_string()
+                        // Single-day with end_date (same as start)
+                        format!(
+                            "{} {}-{}",
+                            event.date.format("%Y-%m-%d"),
+                            start_time_str,
+                            end_time_str
+                        )
                     }
                 } else {
-                    event.date.format("%Y-%m-%d").to_string()
+                    // Single-day event
+                    format!(
+                        "{} {}-{}",
+                        event.date.format("%Y-%m-%d"),
+                        start_time_str,
+                        end_time_str
+                    )
                 };
 
-                let event_str = format!(
-                    "{}[{}{}] {}",
-                    completed_mark,
-                    date_range_str,
-                    if event.end_time.is_some() {
-                        format!(" {}{}", time_str, end_time_str)
-                    } else {
-                        time_str
-                    },
-                    event.title
-                );
+                let event_str = format!("{}[{}] {}", completed_mark, date_time_str, event.title);
                 events.push(event_str);
             }
         }
@@ -330,43 +344,57 @@ impl App {
             };
 
             if in_range {
-                let time_str = event
+                let completed_mark = if event.completed { "x " } else { " " };
+
+                // Build time strings for start and end
+                let start_time_str = event
                     .start_time
                     .map(|t| t.format("%H:%M").to_string())
                     .unwrap_or_else(|| "all-day".to_string());
-
                 let end_time_str = event
                     .end_time
-                    .map(|t| format!("-{}", t.format("%H:%M")))
-                    .unwrap_or_default();
+                    .map(|t| t.format("%H:%M").to_string())
+                    .unwrap_or_else(|| "all-day".to_string());
 
-                let completed_mark = if event.completed { "x " } else { " " };
-
-                let date_range_str = if let Some(end_date) = event.end_date {
+                // Build date/time string based on whether it's multi-day
+                let date_time_str = if let Some(end_date) = event.end_date {
                     if end_date != event.date {
-                        format!(
-                            "{} - {}",
-                            event.date.format("%Y-%m-%d"),
-                            end_date.format("%Y-%m-%d")
-                        )
+                        // Multi-day event
+                        if event.start_time.is_some() {
+                            format!(
+                                "{} {} - {} {}",
+                                event.date.format("%Y-%m-%d"),
+                                start_time_str,
+                                end_date.format("%Y-%m-%d"),
+                                end_time_str
+                            )
+                        } else {
+                            format!(
+                                "{} - {}",
+                                event.date.format("%Y-%m-%d"),
+                                end_date.format("%Y-%m-%d")
+                            )
+                        }
                     } else {
-                        event.date.format("%Y-%m-%d").to_string()
+                        // Single-day with end_date (same as start)
+                        format!(
+                            "{} {}-{}",
+                            event.date.format("%Y-%m-%d"),
+                            start_time_str,
+                            end_time_str
+                        )
                     }
                 } else {
-                    event.date.format("%Y-%m-%d").to_string()
+                    // Single-day event
+                    format!(
+                        "{} {}-{}",
+                        event.date.format("%Y-%m-%d"),
+                        start_time_str,
+                        end_time_str
+                    )
                 };
 
-                let event_str = format!(
-                    "{}[{}{}] {}",
-                    completed_mark,
-                    date_range_str,
-                    if event.end_time.is_some() {
-                        format!(" {}{}", time_str, end_time_str)
-                    } else {
-                        time_str
-                    },
-                    event.title
-                );
+                let event_str = format!("{}[{}] {}", completed_mark, date_time_str, event.title);
                 events.push((idx, event_str));
             }
         }
