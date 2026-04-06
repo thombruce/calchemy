@@ -33,10 +33,24 @@ impl<'a> CalendarView<'a> {
         let month_end = self.get_month_end();
 
         for event in self.calendar.events() {
-            if event.date >= month_start && event.date <= month_end {
-                if !days.contains(&event.date) {
-                    days.push(event.date);
+            let event_start = event.date;
+            let event_end = event.end_date.unwrap_or(event.date);
+
+            // Skip if event doesn't overlap with this month
+            if event_end < month_start || event_start > month_end {
+                continue;
+            }
+
+            // Add all days in the overlap
+            let overlap_start = event_start.max(month_start);
+            let overlap_end = event_end.min(month_end);
+
+            let mut current = overlap_start;
+            while current <= overlap_end {
+                if !days.contains(&current) {
+                    days.push(current);
                 }
+                current = current + chrono::Duration::days(1);
             }
         }
         days
@@ -302,9 +316,7 @@ mod tests {
         }
 
         #[test]
-        fn test_get_days_with_events_only_includes_start_date() {
-            // Note: This test reveals a current limitation - multi-day events
-            // only show the start date in the calendar view, not all days
+        fn test_get_days_with_events_includes_all_days_of_multi_day_event() {
             let cal = make_calendar_with_events(vec![make_multi_day_event(
                 NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
                 NaiveDate::from_ymd_opt(2024, 3, 20).unwrap(),
@@ -314,9 +326,11 @@ mod tests {
 
             let days = view.get_days_with_events();
 
-            // Currently only returns the start date - this could be improved
-            assert_eq!(days.len(), 1);
-            assert!(days.contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+            // Should include all 6 days: 15, 16, 17, 18, 19, 20
+            assert_eq!(days.len(), 6);
+            for day in 15..=20 {
+                assert!(days.contains(&NaiveDate::from_ymd_opt(2024, 3, day).unwrap()));
+            }
         }
     }
 }
