@@ -218,6 +218,7 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 rrule: rrule.clone(),
                 every_keyword: None,
                 exceptions,
+                exception_keyword: None,
                 tags: tag.clone(),
                 hashtags: hashtag.clone(),
                 location: location.clone(),
