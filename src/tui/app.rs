@@ -12,7 +12,6 @@ use ratatui::{
 };
 
 use crate::{
-    parse_event_line,
     tui::{calendar::CalendarView, dialog::ConfirmDialog, events::EventList, input::InputDialog},
     Calendar,
 };
@@ -497,22 +496,6 @@ impl App {
         self.input_buffer = String::new();
         if let Some(day) = self.selected_day {
             self.input_buffer = day.format("%Y-%m-%d ").to_string();
-        }
-    }
-
-    fn add_event(&mut self) {
-        if self.input_buffer.is_empty() {
-            self.show_input = false;
-            return;
-        }
-
-        // Parse the event from the input
-        if let Some(event) = parse_event_line(&self.input_buffer) {
-            self.calendar.add_event(event);
-            self.show_input = false;
-            self.input_buffer.clear();
-            self.dirty = true;
-            self.save();
         }
     }
 
@@ -1117,6 +1100,7 @@ mod tests {
 
     mod event_operations {
         use super::*;
+        use crate::parse_event_line;
 
         fn add_event_with_input(app: &mut App, input: &str) {
             if input.is_empty() {

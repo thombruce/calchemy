@@ -22,7 +22,6 @@ pub struct ConfirmDialog<'a> {
     option1_label: Option<&'a str>,
     option2_label: Option<&'a str>,
     option3_label: Option<&'a str>,
-    selected_option: Option<usize>,
 }
 
 impl<'a> ConfirmDialog<'a> {
@@ -33,7 +32,6 @@ impl<'a> ConfirmDialog<'a> {
             option1_label: None,
             option2_label: None,
             option3_label: None,
-            selected_option: None,
         }
     }
 

@@ -201,7 +201,7 @@ mod tests {
             calendar: &Calendar,
             selected_day: Option<NaiveDate>,
             selected_index: Option<usize>,
-        ) -> EventList {
+        ) -> EventList<'_> {
             EventList::new(
                 calendar,
                 selected_day,
@@ -306,7 +306,7 @@ mod tests {
             calendar: &Calendar,
             selected_day: Option<NaiveDate>,
             selected_index: Option<usize>,
-        ) -> EventList {
+        ) -> EventList<'_> {
             EventList::new(
                 calendar,
                 selected_day,
