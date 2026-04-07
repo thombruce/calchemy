@@ -716,6 +716,23 @@ mod tests {
         }
     }
 
+    fn make_recurring_event(date: NaiveDate, title: &str, every_keyword: &str) -> crate::Event {
+        crate::Event {
+            date,
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: title.to_string(),
+            rrule: None,
+            every_keyword: Some(every_keyword.to_string()),
+            exceptions: Vec::new(),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        }
+    }
+
     mod app_initialization {
         use super::*;
 
@@ -1284,6 +1301,249 @@ mod tests {
             app.open_event();
 
             assert!(app.calendar.events()[0].completed);
+        }
+
+        #[test]
+        fn test_dialog_state_variants() {
+            assert_eq!(DialogState::None, DialogState::None);
+            assert_eq!(DialogState::CloseRecurring, DialogState::CloseRecurring);
+            assert_eq!(DialogState::DeleteRecurring, DialogState::DeleteRecurring);
+        }
+
+        #[test]
+        fn test_close_recurring_event_shows_dialog() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+
+            app.close_event();
+
+            assert_eq!(app.dialog_state, DialogState::CloseRecurring);
+            assert_eq!(app.calendar.events()[0].completed, false);
+        }
+
+        #[test]
+        fn test_close_non_recurring_event_closes_directly() {
+            let mut app = App::new();
+            app.calendar.add_event(make_test_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "One-time Event",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+
+            app.close_event();
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert!(app.calendar.events()[0].completed);
+            assert_eq!(app.selected_event_index, None);
+        }
+
+        #[test]
+        fn test_delete_recurring_event_shows_dialog() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+
+            app.delete_event();
+
+            assert_eq!(app.dialog_state, DialogState::DeleteRecurring);
+            assert_eq!(app.calendar.events().len(), 1);
+        }
+
+        #[test]
+        fn test_delete_non_recurring_event_deletes_directly() {
+            let mut app = App::new();
+            app.calendar.add_event(make_test_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "One-time Event",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+
+            app.delete_event();
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert!(app.calendar.events().is_empty());
+            assert_eq!(app.selected_event_index, None);
+        }
+
+        #[test]
+        fn test_handle_dialog_choice_close_occurrence() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+            app.dialog_state = DialogState::CloseRecurring;
+
+            app.handle_dialog_choice(1);
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert_eq!(app.selected_event_index, None);
+            assert_eq!(app.calendar.events().len(), 2);
+            let original = &app.calendar.events()[0];
+            assert!(original
+                .exceptions
+                .contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+            let closed_instance = &app.calendar.events()[1];
+            assert!(closed_instance.completed);
+            assert_eq!(closed_instance.title, "Weekly Meeting");
+        }
+
+        #[test]
+        fn test_handle_dialog_choice_close_all() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+            app.dialog_state = DialogState::CloseRecurring;
+
+            app.handle_dialog_choice(2);
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert_eq!(app.selected_event_index, None);
+            assert_eq!(app.calendar.events().len(), 1);
+            assert!(app.calendar.events()[0].completed);
+        }
+
+        #[test]
+        fn test_handle_dialog_choice_delete_one() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+            app.dialog_state = DialogState::DeleteRecurring;
+
+            app.handle_dialog_choice(1);
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert_eq!(app.selected_event_index, None);
+            assert_eq!(app.calendar.events().len(), 1);
+            assert!(app.calendar.events()[0]
+                .exceptions
+                .contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+        }
+
+        #[test]
+        fn test_handle_dialog_choice_delete_future() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+            app.dialog_state = DialogState::DeleteRecurring;
+
+            app.handle_dialog_choice(2);
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert_eq!(app.selected_event_index, None);
+            assert_eq!(app.calendar.events().len(), 1);
+            assert_eq!(
+                app.calendar.events()[0].end_date,
+                Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap())
+            );
+        }
+
+        #[test]
+        fn test_handle_dialog_choice_delete_all() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            app.selected_day = Some(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.selected_event_index = Some(0);
+            app.dialog_state = DialogState::DeleteRecurring;
+
+            app.handle_dialog_choice(3);
+
+            assert_eq!(app.dialog_state, DialogState::None);
+            assert_eq!(app.selected_event_index, None);
+            assert!(app.calendar.events().is_empty());
+        }
+
+        #[test]
+        fn test_close_occurrence_adds_exception_to_original() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            let day = NaiveDate::from_ymd_opt(2024, 3, 15).unwrap();
+
+            app.close_occurrence(0, day);
+
+            assert!(app.calendar.events()[0].exceptions.contains(&day));
+        }
+
+        #[test]
+        fn test_close_occurrence_creates_closed_instance() {
+            let mut app = App::new();
+            app.calendar.add_event(make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            ));
+            let day = NaiveDate::from_ymd_opt(2024, 3, 15).unwrap();
+
+            app.close_occurrence(0, day);
+
+            assert_eq!(app.calendar.events().len(), 2);
+            let closed = &app.calendar.events()[1];
+            assert!(closed.completed);
+            assert_eq!(closed.title, "Weekly Meeting");
+            assert_eq!(closed.date, day);
+        }
+
+        #[test]
+        fn test_close_occurrence_does_not_duplicate_exception() {
+            let mut app = App::new();
+            let mut event = make_recurring_event(
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                "Weekly Meeting",
+                "every:week",
+            );
+            event
+                .exceptions
+                .push(NaiveDate::from_ymd_opt(2024, 3, 15).unwrap());
+            app.calendar.add_event(event);
+            let day = NaiveDate::from_ymd_opt(2024, 3, 15).unwrap();
+
+            app.close_occurrence(0, day);
+
+            let exceptions_count = app.calendar.events()[0]
+                .exceptions
+                .iter()
+                .filter(|d| *d == &day)
+                .count();
+            assert_eq!(exceptions_count, 1);
         }
     }
 

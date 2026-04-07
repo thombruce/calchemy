@@ -145,3 +145,103 @@ impl<'a> Widget for ConfirmDialog<'a> {
         buf.set_string(hint_x, hint_y, hint, Style::default().fg(Color::DarkGray));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_dialog_sets_title_and_message() {
+        let dialog = ConfirmDialog::new("Test Title", "Test Message");
+        assert_eq!(dialog.title, "Test Title");
+        assert_eq!(dialog.message, "Test Message");
+    }
+
+    #[test]
+    fn test_with_options_chaining() {
+        let dialog = ConfirmDialog::new("Title", "Message")
+            .with_option1("Option 1")
+            .with_option2("Option 2")
+            .with_option3("Option 3");
+
+        assert_eq!(dialog.option1_label, Some("Option 1"));
+        assert_eq!(dialog.option2_label, Some("Option 2"));
+        assert_eq!(dialog.option3_label, Some("Option 3"));
+    }
+
+    #[test]
+    fn test_with_option1_sets_option1() {
+        let dialog = ConfirmDialog::new("Title", "Message").with_option1("First");
+        assert_eq!(dialog.option1_label, Some("First"));
+        assert_eq!(dialog.option2_label, None);
+        assert_eq!(dialog.option3_label, None);
+    }
+
+    #[test]
+    fn test_with_option2_sets_option2() {
+        let dialog = ConfirmDialog::new("Title", "Message").with_option2("Second");
+        assert_eq!(dialog.option1_label, None);
+        assert_eq!(dialog.option2_label, Some("Second"));
+        assert_eq!(dialog.option3_label, None);
+    }
+
+    #[test]
+    fn test_with_option3_sets_option3() {
+        let dialog = ConfirmDialog::new("Title", "Message").with_option3("Third");
+        assert_eq!(dialog.option1_label, None);
+        assert_eq!(dialog.option2_label, None);
+        assert_eq!(dialog.option3_label, Some("Third"));
+    }
+
+    #[test]
+    fn test_get_option_label_returns_correct_labels() {
+        let dialog = ConfirmDialog::new("Title", "Message")
+            .with_option1("First")
+            .with_option2("Second")
+            .with_option3("Third");
+
+        assert_eq!(dialog.get_option_label(0), Some("First"));
+        assert_eq!(dialog.get_option_label(1), Some("Second"));
+        assert_eq!(dialog.get_option_label(2), Some("Third"));
+        assert_eq!(dialog.get_option_label(3), None);
+    }
+
+    #[test]
+    fn test_option_count_zero_when_no_options() {
+        let dialog = ConfirmDialog::new("Title", "Message");
+        assert_eq!(dialog.option_count(), 0);
+    }
+
+    #[test]
+    fn test_option_count_one_with_single_option() {
+        let dialog = ConfirmDialog::new("Title", "Message").with_option1("Option");
+        assert_eq!(dialog.option_count(), 1);
+    }
+
+    #[test]
+    fn test_option_count_two_with_two_options() {
+        let dialog = ConfirmDialog::new("Title", "Message")
+            .with_option1("Option 1")
+            .with_option2("Option 2");
+        assert_eq!(dialog.option_count(), 2);
+    }
+
+    #[test]
+    fn test_option_count_three_with_all_options() {
+        let dialog = ConfirmDialog::new("Title", "Message")
+            .with_option1("Option 1")
+            .with_option2("Option 2")
+            .with_option3("Option 3");
+        assert_eq!(dialog.option_count(), 3);
+    }
+
+    #[test]
+    fn test_dialog_choice_variants() {
+        assert_eq!(DialogChoice::None, DialogChoice::None);
+        assert_eq!(DialogChoice::Confirm, DialogChoice::Confirm);
+        assert_eq!(DialogChoice::Option1, DialogChoice::Option1);
+        assert_eq!(DialogChoice::Option2, DialogChoice::Option2);
+        assert_eq!(DialogChoice::Option3, DialogChoice::Option3);
+        assert_eq!(DialogChoice::Cancel, DialogChoice::Cancel);
+    }
+}
