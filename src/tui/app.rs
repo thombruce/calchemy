@@ -12,6 +12,7 @@ use ratatui::{
 };
 
 use crate::{
+    parse_event_line,
     tui::{calendar::CalendarView, dialog::ConfirmDialog, events::EventList, input::InputDialog},
     Calendar,
 };
@@ -209,6 +210,37 @@ impl App {
                 _ => {}
             }
             return;
+        }
+
+        // Handle input for add dialog
+        match code {
+            KeyCode::Enter => self.add_event(),
+            KeyCode::Esc => {
+                self.show_input = false;
+                self.input_buffer.clear();
+            }
+            KeyCode::Backspace => {
+                self.input_buffer.pop();
+            }
+            KeyCode::Char(c) => {
+                self.input_buffer.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    fn add_event(&mut self) {
+        if self.input_buffer.is_empty() {
+            self.show_input = false;
+            return;
+        }
+
+        if let Some(event) = parse_event_line(&self.input_buffer) {
+            self.calendar.add_event(event);
+            self.show_input = false;
+            self.input_buffer.clear();
+            self.dirty = true;
+            self.save();
         }
     }
 
