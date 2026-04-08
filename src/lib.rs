@@ -5,6 +5,61 @@ use thiserror::Error;
 
 pub mod tui;
 
+pub const RRULE_PREFIX: &str = "rrule:";
+pub const EXDATE_PREFIX: &str = "exdate:";
+pub const EXCEPT_PREFIX: &str = "except:";
+pub const EVERY_PREFIX: &str = "every:";
+
+fn parse_every_keyword(keyword: &str) -> Option<String> {
+    let keyword_lower = keyword.to_lowercase();
+    let days_map = [
+        ("monday", "MO"),
+        ("tuesday", "TU"),
+        ("wednesday", "WE"),
+        ("thursday", "TH"),
+        ("friday", "FR"),
+        ("saturday", "SA"),
+        ("sunday", "SU"),
+    ];
+
+    match keyword_lower.as_str() {
+        "day" => Some("FREQ=DAILY".to_string()),
+        "week" => Some("FREQ=WEEKLY".to_string()),
+        "month" => Some("FREQ=MONTHLY".to_string()),
+        "year" => Some("FREQ=YEARLY".to_string()),
+        "weekday" => Some("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".to_string()),
+        "weekend" => Some("FREQ=WEEKLY;BYDAY=SA,SU".to_string()),
+        _ => {
+            // Check for day names or comma-separated day names
+            let parts: Vec<&str> = keyword_lower.split(',').collect();
+            if parts.len() > 1 {
+                // Multiple days: "monday,wednesday"
+                let mut rrule_days = Vec::new();
+                for part in parts {
+                    let part = part.trim();
+                    for (day_name, day_code) in days_map.iter() {
+                        if *day_name == part {
+                            rrule_days.push(*day_code);
+                            break;
+                        }
+                    }
+                }
+                if !rrule_days.is_empty() {
+                    return Some(format!("FREQ=WEEKLY;BYDAY={}", rrule_days.join(",")));
+                }
+            } else {
+                // Single day: "monday"
+                for (day_name, day_code) in days_map.iter() {
+                    if *day_name == keyword_lower.as_str() {
+                        return Some(format!("FREQ=WEEKLY;BYDAY={}", day_code));
+                    }
+                }
+            }
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     pub date: NaiveDate,
@@ -13,7 +68,9 @@ pub struct Event {
     pub end_date: Option<NaiveDate>,
     pub title: String,
     pub rrule: Option<String>,
+    pub every_keyword: Option<String>, // stores "every:weekday" if that was the original input
     pub exceptions: Vec<NaiveDate>,
+    pub exception_keyword: Option<String>, // stores "exdate" or "except" - similar to every_keyword
     pub tags: Vec<String>,
     pub hashtags: Vec<String>,
     pub location: Option<String>,
@@ -32,6 +89,7 @@ pub struct ExpandedEvent {
     pub location: Option<String>,
     pub is_exception: bool,
     pub completed: bool,
+    pub original_event_index: usize,
 }
 
 #[derive(Error, Debug)]
@@ -121,7 +179,7 @@ impl Calendar {
     ) -> Result<Vec<ExpandedEvent>, CalchemyError> {
         let mut expanded = Vec::new();
 
-        for event in &self.events {
+        for (idx, event) in self.events.iter().enumerate() {
             let occurrences = self.expand_recurrence(event, start, end)?;
             for occ in occurrences {
                 let is_exception = event.exceptions.contains(&occ);
@@ -139,6 +197,7 @@ impl Calendar {
                     location: event.location.clone(),
                     is_exception: false,
                     completed: event.completed,
+                    original_event_index: idx,
                 });
             }
         }
@@ -150,6 +209,19 @@ impl Calendar {
         });
 
         Ok(expanded)
+    }
+
+    pub fn expanded_events_on_day(
+        &self,
+        day: NaiveDate,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Vec<ExpandedEvent> {
+        self.events_between(start, end)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|exp| exp.date == day)
+            .collect()
     }
 
     fn expand_recurrence(
@@ -318,6 +390,8 @@ pub fn parse_event_line(line: &str) -> Option<Event> {
             || part.starts_with('+')
             || part.starts_with("rrule:")
             || part.starts_with("exdate:")
+            || part.starts_with("except:")
+            || part.starts_with(EVERY_PREFIX)
             || part.starts_with('#')
         {
             in_metadata = true;
@@ -329,19 +403,40 @@ pub fn parse_event_line(line: &str) -> Option<Event> {
         }
     }
 
+    let mut every_keyword = None;
+    let mut exception_keyword = None;
+
     for meta in metadata {
-        if meta.starts_with('@') {
-            location = Some(meta[1..].to_string());
-        } else if meta.starts_with('+') {
-            tags.push(meta[1..].to_string());
-        } else if meta.starts_with("rrule:") {
-            rrule = Some(meta[6..].to_string());
-        } else if meta.starts_with("exdate:") {
-            if let Ok(d) = NaiveDate::parse_from_str(&meta[7..], "%Y-%m-%d") {
-                exceptions.push(d);
+        if let Some(stripped) = meta.strip_prefix('@') {
+            location = Some(stripped.to_string());
+        } else if let Some(stripped) = meta.strip_prefix('+') {
+            tags.push(stripped.to_string());
+        } else if let Some(stripped) = meta.strip_prefix("rrule:") {
+            rrule = Some(stripped.to_string());
+        } else if meta.starts_with(EXCEPT_PREFIX) || meta.starts_with(EXDATE_PREFIX) {
+            let is_except = meta.starts_with(EXCEPT_PREFIX);
+            let prefix = if is_except {
+                exception_keyword = Some("except".to_string());
+                EXCEPT_PREFIX
+            } else {
+                exception_keyword = Some("exdate".to_string());
+                EXDATE_PREFIX
+            };
+
+            let value = &meta[prefix.len()..];
+
+            if is_except {
+                parse_exception_value(value, true, &mut exceptions);
+            } else {
+                parse_exception_value(value, false, &mut exceptions);
             }
-        } else if meta.starts_with('#') {
-            hashtags.push(meta[1..].to_string());
+        } else if let Some(keyword) = meta.strip_prefix(EVERY_PREFIX) {
+            if let Some(rrule_value) = parse_every_keyword(keyword) {
+                rrule = Some(rrule_value);
+                every_keyword = Some(meta.to_string());
+            }
+        } else if let Some(stripped) = meta.strip_prefix('#') {
+            hashtags.push(stripped.to_string());
         }
     }
 
@@ -358,12 +453,45 @@ pub fn parse_event_line(line: &str) -> Option<Event> {
         end_date,
         title,
         rrule,
+        every_keyword,
         exceptions,
+        exception_keyword,
         tags,
         hashtags,
         location,
         completed,
     })
+}
+
+fn parse_exception_value(value: &str, allow_ranges: bool, exceptions: &mut Vec<NaiveDate>) {
+    // Split by comma to handle multiple dates
+    for part in value.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        if part.contains("..") && allow_ranges {
+            let range_parts: Vec<&str> = part.split("..").collect();
+            if range_parts.len() == 2
+                && let Ok(start) = NaiveDate::parse_from_str(range_parts[0], "%Y-%m-%d")
+                && let Ok(end) = NaiveDate::parse_from_str(range_parts[1], "%Y-%m-%d")
+                && end >= start
+            {
+                let mut current = start;
+                while current <= end {
+                    if !exceptions.contains(&current) {
+                        exceptions.push(current);
+                    }
+                    current += chrono::Duration::days(1);
+                }
+            }
+        } else if let Ok(d) = NaiveDate::parse_from_str(part, "%Y-%m-%d")
+            && !exceptions.contains(&d)
+        {
+            exceptions.push(d);
+        }
+    }
 }
 
 fn format_event(event: &Event) -> String {
@@ -383,21 +511,19 @@ fn format_event(event: &Event) -> String {
     // Handle end_time - for multi-day events, it goes after end_date
     // For single-day events, it goes before end_date would be (but we don't have end_date)
     let end_time_before_title = event.end_time.is_some() && event.end_date.is_none();
-    if end_time_before_title {
-        if let Some(end) = event.end_time {
-            parts.push(end.format("%H:%M").to_string());
-        }
+    if end_time_before_title
+        && let Some(end) = event.end_time
+    {
+        parts.push(end.format("%H:%M").to_string());
     }
 
-    // Handle multi-day events - output end_date (and end_time if present)
     if let Some(end_date) = event.end_date {
         parts.push(end_date.format("%Y-%m-%d").to_string());
 
-        // For multi-day with times, end_time goes after end_date
-        if event.end_date.is_some() && event.end_time.is_some() {
-            if let Some(end) = event.end_time {
-                parts.push(end.format("%H:%M").to_string());
-            }
+        if event.end_time.is_some()
+            && let Some(end) = event.end_time
+        {
+            parts.push(end.format("%H:%M").to_string());
         }
     }
 
@@ -411,12 +537,56 @@ fn format_event(event: &Event) -> String {
         parts.push(format!("+{}", tag));
     }
 
-    if let Some(rrule) = &event.rrule {
+    // Output recurrence: use every_keyword if present, otherwise use rrule
+    if let Some(every) = &event.every_keyword {
+        parts.push(every.clone());
+    } else if let Some(rrule) = &event.rrule {
         parts.push(format!("rrule:{}", rrule));
     }
 
-    for ex in &event.exceptions {
-        parts.push(format!("exdate:{}", ex.format("%Y-%m-%d")));
+    // Output exceptions: use exdate: or except: based on exception_keyword
+    if !event.exceptions.is_empty() {
+        // Determine prefix to use
+        let prefix = if event.exception_keyword.as_deref() == Some("exdate") {
+            "exdate:"
+        } else {
+            "except:" // Default to except: for new events or if loaded with except:
+        };
+
+        // Build comma-separated list of dates, converting ranges back to ranges
+        let mut exception_parts: Vec<String> = Vec::new();
+        let mut sorted_exceptions = event.exceptions.clone();
+        sorted_exceptions.sort();
+
+        let mut i = 0;
+        while i < sorted_exceptions.len() {
+            let start = sorted_exceptions[i];
+            let mut end = start;
+            let mut j = i + 1;
+
+            // Find consecutive dates to form a range
+            while j < sorted_exceptions.len()
+                && sorted_exceptions[j] == end + chrono::Duration::days(1)
+            {
+                end = sorted_exceptions[j];
+                j += 1;
+            }
+
+            // Format as range if more than 1 day, otherwise single date
+            if end > start {
+                exception_parts.push(format!(
+                    "{}..{}",
+                    start.format("%Y-%m-%d"),
+                    end.format("%Y-%m-%d")
+                ));
+            } else {
+                exception_parts.push(start.format("%Y-%m-%d").to_string());
+            }
+
+            i = j;
+        }
+
+        parts.push(format!("{}{}", prefix, exception_parts.join(",")));
     }
 
     for tag in &event.hashtags {
@@ -473,6 +643,64 @@ pub fn format_event_for_display(event: &Event) -> String {
     format!("{} [{}] {}", completed_mark, date_time_str, event.title)
 }
 
+pub fn format_expanded_event_for_display(expanded: &ExpandedEvent, original: &Event) -> String {
+    let start_time_str = expanded.start_time.map(|t| t.format("%H:%M").to_string());
+    let end_time_str = expanded.end_time.map(|t| t.format("%H:%M").to_string());
+
+    let time_display = match (&start_time_str, &end_time_str) {
+        (Some(start), Some(end)) => format!("{}-{}", start, end),
+        (Some(start), None) => start.clone(),
+        (None, Some(end)) => format!("-{}", end),
+        (None, None) => String::new(),
+    };
+
+    let completed_mark = if expanded.completed { "x " } else { " " };
+    let date_time_str = if let Some(end_date) = expanded.end_date {
+        if end_date != expanded.date {
+            if !time_display.is_empty() {
+                format!(
+                    "{} {} - {} {}",
+                    expanded.date.format("%Y-%m-%d"),
+                    start_time_str.unwrap(),
+                    end_date.format("%Y-%m-%d"),
+                    end_time_str.unwrap()
+                )
+            } else {
+                format!(
+                    "{} - {}",
+                    expanded.date.format("%Y-%m-%d"),
+                    end_date.format("%Y-%m-%d")
+                )
+            }
+        } else {
+            if !time_display.is_empty() {
+                format!("{} {}", expanded.date.format("%Y-%m-%d"), time_display)
+            } else {
+                expanded.date.format("%Y-%m-%d").to_string()
+            }
+        }
+    } else {
+        if !time_display.is_empty() {
+            format!("{} {}", expanded.date.format("%Y-%m-%d"), time_display)
+        } else {
+            expanded.date.format("%Y-%m-%d").to_string()
+        }
+    };
+
+    let recurrence = if let Some(every) = &original.every_keyword {
+        format!(" {}", every)
+    } else if let Some(rrule) = &original.rrule {
+        format!(" rrule:{}", rrule)
+    } else {
+        String::new()
+    };
+
+    format!(
+        "{} [{}] {}{}",
+        completed_mark, date_time_str, expanded.title, recurrence
+    )
+}
+
 pub fn export_ics(calendar: &Calendar, path: &str) -> Result<(), CalchemyError> {
     use icalendar::{Calendar, CalendarDateTime, Component, Event};
 
@@ -504,7 +732,7 @@ pub fn export_ics(calendar: &Calendar, path: &str) -> Result<(), CalchemyError> 
             let ndt = event.date.and_hms_opt(23, 59, 59).unwrap();
             CalendarDateTime::from(ndt)
         } else {
-            start.clone()
+            start
         };
 
         ics_event.summary(&event.title);
@@ -586,7 +814,9 @@ mod tests {
             end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: Some("office".to_string()),
@@ -609,7 +839,9 @@ mod tests {
             end_date: Some(NaiveDate::from_ymd_opt(2024, 3, 18).unwrap()),
             title: "Conference".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -630,7 +862,9 @@ mod tests {
             end_date: None,
             title: "Done Task".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -650,6 +884,206 @@ mod tests {
             event.exceptions[0],
             NaiveDate::from_ymd_opt(2024, 5, 24).unwrap()
         );
+        assert_eq!(event.exception_keyword, Some("exdate".to_string()));
+    }
+
+    #[test]
+    fn test_parse_except_single_date() {
+        let line = "2024-01-15 Meeting every:week except:2024-03-15";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.exceptions.len(), 1);
+        assert_eq!(
+            event.exceptions[0],
+            NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()
+        );
+        assert_eq!(event.exception_keyword, Some("except".to_string()));
+    }
+
+    #[test]
+    fn test_parse_except_comma_separated() {
+        let line = "2024-01-15 Meeting every:week except:2024-03-15,2024-03-22,2024-03-29";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.exceptions.len(), 3);
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 22).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 29).unwrap()));
+        assert_eq!(event.exception_keyword, Some("except".to_string()));
+    }
+
+    #[test]
+    fn test_parse_except_range() {
+        let line = "2024-01-15 Meeting every:week except:2024-03-01..2024-03-07";
+        let event = parse_event_line(line).unwrap();
+        // Should expand range to all 7 days
+        assert_eq!(event.exceptions.len(), 7);
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 1).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 7).unwrap()));
+        assert_eq!(event.exception_keyword, Some("except".to_string()));
+    }
+
+    #[test]
+    fn test_parse_except_combined() {
+        let line =
+            "2024-01-15 Meeting every:week except:2024-03-01,2024-03-08..2024-03-15,2024-04-01";
+        let event = parse_event_line(line).unwrap();
+        // Single date + 8-day range + single date = 10 dates
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 1).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 8).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 4, 1).unwrap()));
+        assert_eq!(event.exception_keyword, Some("except".to_string()));
+    }
+
+    #[test]
+    fn test_parse_exdate_comma_separated() {
+        let line = "2024-01-15 Meeting rrule:FREQ=WEEKLY exdate:2024-03-15,2024-03-22";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.exceptions.len(), 2);
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 15).unwrap()));
+        assert!(event
+            .exceptions
+            .contains(&NaiveDate::from_ymd_opt(2024, 3, 22).unwrap()));
+        assert_eq!(event.exception_keyword, Some("exdate".to_string()));
+    }
+
+    #[test]
+    fn test_parse_exdate_range_ignored() {
+        // exdate: should NOT support ranges (not RRULE compliant)
+        let line = "2024-01-15 Meeting rrule:FREQ=WEEKLY exdate:2024-03-01..2024-03-07";
+        let event = parse_event_line(line).unwrap();
+        // Should be skipped - no exceptions added
+        assert!(event.exceptions.is_empty());
+        assert_eq!(event.exception_keyword, Some("exdate".to_string()));
+    }
+
+    #[test]
+    fn test_format_uses_except_prefix() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Meeting".to_string(),
+            rrule: None,
+            every_keyword: Some("every:week".to_string()),
+            exceptions: vec![
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 22).unwrap(),
+            ],
+            exception_keyword: Some("except".to_string()),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        // Default (except) should be used
+        assert!(formatted.contains("except:2024-03-15,2024-03-22"));
+        assert!(!formatted.contains("exdate:"));
+    }
+
+    #[test]
+    fn test_format_preserves_exdate() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Meeting".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
+            exceptions: vec![
+                NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 22).unwrap(),
+            ],
+            exception_keyword: Some("exdate".to_string()),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        // Should preserve exdate prefix
+        assert!(formatted.contains("exdate:2024-03-15,2024-03-22"));
+    }
+
+    #[test]
+    fn test_format_consecutive_dates_as_range() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Meeting".to_string(),
+            rrule: None,
+            every_keyword: Some("every:week".to_string()),
+            exceptions: vec![
+                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 2).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 3).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 4).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 5).unwrap(),
+            ],
+            exception_keyword: Some("except".to_string()),
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        // Should convert consecutive dates to range
+        assert!(formatted.contains("except:2024-03-01..2024-03-05"));
+    }
+
+    #[test]
+    fn test_roundtrip_except() {
+        let line = "2024-01-15 Meeting every:week except:2024-03-15,2024-03-22..2024-03-29";
+        let event = parse_event_line(line).unwrap();
+        let formatted = format_event(&event);
+        let reparsed = parse_event_line(&formatted).unwrap();
+
+        assert_eq!(event.exceptions.len(), reparsed.exceptions.len());
+        for ex in &event.exceptions {
+            assert!(reparsed.exceptions.contains(ex));
+        }
+        assert_eq!(event.exception_keyword, reparsed.exception_keyword);
+    }
+
+    #[test]
+    fn test_roundtrip_exdate() {
+        let line = "2024-01-15 Meeting rrule:FREQ=WEEKLY exdate:2024-03-15,2024-03-22";
+        let event = parse_event_line(line).unwrap();
+        let formatted = format_event(&event);
+        let reparsed = parse_event_line(&formatted).unwrap();
+
+        assert_eq!(event.exceptions.len(), reparsed.exceptions.len());
+        for ex in &event.exceptions {
+            assert!(reparsed.exceptions.contains(ex));
+        }
+        assert_eq!(event.exception_keyword, reparsed.exception_keyword);
     }
 
     #[test]
@@ -677,6 +1111,135 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_every_day() {
+        let line = "2024-01-15 Meeting every:day";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:day".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=DAILY".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_week() {
+        let line = "2024-01-15 Meeting every:week";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:week".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=WEEKLY".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_month() {
+        let line = "2024-01-15 Meeting every:month";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:month".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=MONTHLY".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_year() {
+        let line = "2024-01-15 Birthday every:year";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:year".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=YEARLY".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_weekday() {
+        let line = "2024-01-15 Work every:weekday";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:weekday".to_string()));
+        assert_eq!(
+            event.rrule,
+            Some("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_every_weekend() {
+        let line = "2024-01-15 Hiking every:weekend";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:weekend".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=WEEKLY;BYDAY=SA,SU".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_specific_day() {
+        let line = "2024-01-15 Standup every:monday";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:monday".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=WEEKLY;BYDAY=MO".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_combined_days() {
+        let line = "2024-01-15 Meeting every:monday,wednesday";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(
+            event.every_keyword,
+            Some("every:monday,wednesday".to_string())
+        );
+        assert_eq!(event.rrule, Some("FREQ=WEEKLY;BYDAY=MO,WE".to_string()));
+    }
+
+    #[test]
+    fn test_parse_every_with_exdate() {
+        let line = "2024-01-15 Meeting every:week exdate:2024-03-01";
+        let event = parse_event_line(line).unwrap();
+        assert_eq!(event.every_keyword, Some("every:week".to_string()));
+        assert_eq!(event.rrule, Some("FREQ=WEEKLY".to_string()));
+        assert_eq!(event.exceptions.len(), 1);
+        assert_eq!(
+            event.exceptions[0],
+            NaiveDate::from_ymd_opt(2024, 3, 1).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_format_every_keyword() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Meeting".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: Some("every:week".to_string()),
+            exceptions: Vec::new(),
+            exception_keyword: None,
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        assert!(formatted.contains("every:week"));
+        assert!(!formatted.contains("rrule:"));
+    }
+
+    #[test]
+    fn test_format_rrule_when_no_every_keyword() {
+        let event = Event {
+            date: NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            start_time: None,
+            end_time: None,
+            end_date: None,
+            title: "Meeting".to_string(),
+            rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
+            exceptions: Vec::new(),
+            exception_keyword: None,
+            tags: Vec::new(),
+            hashtags: Vec::new(),
+            location: None,
+            completed: false,
+        };
+
+        let formatted = format_event(&event);
+        assert!(formatted.contains("rrule:FREQ=WEEKLY"));
+        assert!(!formatted.contains("every:"));
+    }
+
+    #[test]
     fn test_calendar_roundtrip() {
         use tempfile::NamedTempFile;
 
@@ -688,7 +1251,9 @@ mod tests {
             end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: None,
@@ -714,7 +1279,9 @@ mod tests {
             end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -745,7 +1312,9 @@ mod tests {
             end_date: None,
             title: "Team standup".to_string(),
             rrule: Some("FREQ=WEEKLY".to_string()),
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: vec!["work".to_string()],
             hashtags: Vec::new(),
             location: Some("office".to_string()),
@@ -778,7 +1347,9 @@ mod tests {
             end_date: None,
             title: "Closed event".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -793,7 +1364,9 @@ mod tests {
             end_date: None,
             title: "Open event".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -828,7 +1401,9 @@ mod tests {
             end_date: None,
             title: "Afternoon meeting".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -842,7 +1417,9 @@ mod tests {
             end_date: None,
             title: "Morning meeting".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,
@@ -856,7 +1433,9 @@ mod tests {
             end_date: None,
             title: "Later event".to_string(),
             rrule: None,
+            every_keyword: None,
             exceptions: Vec::new(),
+            exception_keyword: None,
             tags: Vec::new(),
             hashtags: Vec::new(),
             location: None,

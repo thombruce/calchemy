@@ -128,7 +128,7 @@ fn parse_month(s: &str) -> Result<(NaiveDate, NaiveDate), String> {
     let year: i32 = parts[0].parse().map_err(|_| "Invalid year")?;
     let month: u32 = parts[1].parse().map_err(|_| "Invalid month")?;
 
-    if month < 1 || month > 12 {
+    if !(1..=12).contains(&month) {
         return Err("Month must be between 01 and 12".to_string());
     }
 
@@ -216,7 +216,9 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 end_date,
                 title: title.clone(),
                 rrule: rrule.clone(),
+                every_keyword: None,
                 exceptions,
+                exception_keyword: None,
                 tags: tag.clone(),
                 hashtags: hashtag.clone(),
                 location: location.clone(),
@@ -234,7 +236,8 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                 calendar
                     .events()
                     .iter()
-                    .map(|e| calchemy::ExpandedEvent {
+                    .enumerate()
+                    .map(|(idx, e)| calchemy::ExpandedEvent {
                         date: e.date,
                         start_time: e.start_time,
                         end_time: e.end_time,
@@ -245,6 +248,7 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
                         location: e.location.clone(),
                         is_exception: false,
                         completed: e.completed,
+                        original_event_index: idx,
                     })
                     .collect()
             } else if let Some(m) = month {

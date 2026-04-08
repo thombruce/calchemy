@@ -44,8 +44,8 @@ Example:
 | Title | Event description (unquoted) | `Team standup` |
 | Location | @ prefix (context) | `@office` |
 | Tags (projects) | + prefix | `+work` |
-| RRULE | rrule: prefix | `rrule:FREQ=WEEKLY` |
-| Exceptions | exdate: prefix | `exdate:2024-05-24` |
+| Recurrence | every: or rrule: prefix | `every:week` or `rrule:FREQ=WEEKLY` |
+| Exceptions | except: or exdate: prefix | `except:2024-05-24` |
 | Hashtags | # prefix | `#weekly` |
 
 ### Recommended Order
@@ -69,6 +69,50 @@ Calchemy uses RFC 5545 RRULE format. Common patterns:
 | Every 2nd Thursday | `FREQ=MONTHLY;BYSETPOS=2;BYDAY=TH` | 2nd Thursday of month |
 | Last Friday | `FREQ=MONTHLY;BYDAY=-1FR` | Last Friday of month |
 | Until date | `FREQ=WEEKLY;UNTIL=20241231` | Until specific date |
+
+### Human-Friendly Recurrence (every:)
+
+For common recurrence patterns, use the `every:` keyword as a simpler alternative to RRULE:
+
+| Pattern | every: | Description |
+|---------|--------|-------------|
+| Daily | `every:day` | Every day |
+| Weekly | `every:week` | Every week |
+| Monthly | `every:month` | Every month |
+| Yearly | `every:year` | Every year |
+| Weekdays | `every:weekday` | Monday to Friday |
+| Weekends | `every:weekend` | Saturday and Sunday |
+| Specific day | `every:monday` | Every Monday |
+| Multiple days | `every:monday,wednesday` | Every Monday and Wednesday |
+
+Examples:
+```
+2024-01-15 Team standup every:week
+2024-01-15 Work meetings every:weekday
+2024-01-15 Hiking every:weekend
+2024-01-15 Yoga every:tuesday,thursday
+```
+
+### Exception Dates (except: / exdate:)
+
+Use exceptions to skip specific occurrences of recurring events:
+
+**`except:`** - Human-friendly format with range support:
+```
+2024-05-27 Bin collection every:week except:2024-05-24
+2024-05-27 Bin collection every:week except:2024-03-01..2024-03-07
+2024-05-27 Bin collection every:week except:2024-03-15,2024-03-22,2024-03-29
+```
+
+**`exdate:`** - RFC 5545 compliant format (comma-separated only):
+```
+2024-05-27 Bin collection rrule:FREQ=WEEKLY exdate:2024-05-24,2024-05-31
+```
+
+The `except:` keyword supports:
+- Single dates: `except:2024-03-15`
+- Comma-separated: `except:2024-03-15,2024-03-22`
+- Ranges: `except:2024-03-01..2024-03-07` (expands to all dates in range)
 
 ## Usage
 
@@ -185,6 +229,36 @@ calchemy add \
   --exdate 2024-05-24
 ```
 
+### Weekly Standup with Human-Friendly Recurrence
+
+```bash
+# Using every: keyword
+calchemy add \
+  --date 2024-01-15 \
+  --time 09:00 \
+  --end-time 10:00 \
+  --title "Team standup" \
+  --location "Zoom" \
+  --tag work
+
+# Then edit the file to add recurrence:
+# 2024-01-15 09:00 10:00 Team standup @Zoom +work every:week
+```
+
+### Vacation with Date Range Exception
+
+```bash
+# Standing desk reminder every weekday
+calchemy add \
+  --date 2024-01-02 \
+  --title "Standing desk reminder" \
+  --every weekday
+
+# Vacation week off (range exception)
+# Edit file to add:
+# 2024-01-02 Standing desk reminder every:weekday except:2024-03-18..2024-03-22
+```
+
 ## File Format Details
 
 The Calchemy format is designed to be:
@@ -212,6 +286,40 @@ Omit end time for events without duration:
 ```
 2024-01-15 09:00 Dentist appointment
 ```
+
+## Terminal UI (TUI)
+
+Run `calchemy` without arguments to launch the interactive terminal interface.
+
+### Keyboard Controls
+
+| Key | Action |
+|-----|--------|
+| `h` / `l` | Previous / Next month |
+| `j` / `k` | Previous / Next day |
+| `g` / `G` | Go to month start / end |
+| `Tab` | Cycle through events on selected day |
+| `a` | Add new event |
+| `c` | Close/complete event |
+| `o` | Open/reopen event |
+| `d` | Delete event |
+| `q` | Quit |
+| `Esc` | Cancel input / Close dialog |
+
+### Recurring Events in TUI
+
+When closing or deleting a recurring event, Calchemy offers choices:
+
+**Close Event Dialog:**
+- `[1]` Close this occurrence (keep recurring)
+- `[2]` Close all occurrences (mark complete)
+
+**Delete Event Dialog:**
+- `[1]` Delete this occurrence only
+- `[2]` Delete this and future occurrences
+- `[3]` Delete all occurrences
+
+Press `1`, `2`, or `3` to select, or `Esc` to cancel.
 
 ## Development
 
