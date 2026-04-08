@@ -34,36 +34,32 @@ impl<'a> EventList<'a> {
     }
 
     pub fn get_events_for_day(&self, day: NaiveDate) -> Vec<String> {
-        let mut events = Vec::new();
+        use std::collections::HashSet;
 
-        // Get expanded recurrence events
-        if let Ok(expanded) = self
+        let mut events = Vec::new();
+        let mut added_indices: HashSet<usize> = HashSet::new();
+
+        for exp in self
             .calendar
-            .events_between(self.month_start, self.month_end)
+            .expanded_events_on_day(day, self.month_start, self.month_end)
         {
-            for exp in expanded {
-                if exp.date == day {
-                    if let Some(original) = self.calendar.events().get(exp.original_event_index) {
-                        let event_str = crate::format_expanded_event_for_display(&exp, original);
-                        events.push(event_str);
-                    }
-                }
-            }
+            added_indices.insert(exp.original_event_index);
+            let event_str = crate::format_expanded_event_for_display(
+                &exp,
+                &self.calendar.events()[exp.original_event_index],
+            );
+            events.push(event_str);
         }
 
-        // Also handle non-recurring multi-day events
-        for event in self.calendar.events() {
-            if event.rrule.is_none() && event.every_keyword.is_none() {
-                if let Some(end_date) = event.end_date {
-                    if event.date <= day && end_date >= day {
-                        // Skip if already added via expanded events
-                        let already_added = events.iter().any(|s| s.contains(&event.title));
-                        if !already_added {
-                            let event_str = crate::format_event_for_display(event);
-                            events.push(event_str);
-                        }
-                    }
-                }
+        for (idx, event) in self.calendar.events().iter().enumerate() {
+            if !added_indices.contains(&idx)
+                && event.rrule.is_none()
+                && event.every_keyword.is_none()
+                && let Some(end_date) = event.end_date
+                && event.date <= day && end_date >= day
+            {
+                let event_str = crate::format_event_for_display(event);
+                events.push(event_str);
             }
         }
 

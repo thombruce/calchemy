@@ -128,7 +128,7 @@ fn parse_month(s: &str) -> Result<(NaiveDate, NaiveDate), String> {
     let year: i32 = parts[0].parse().map_err(|_| "Invalid year")?;
     let month: u32 = parts[1].parse().map_err(|_| "Invalid month")?;
 
-    if month < 1 || month > 12 {
+    if !(1..=12).contains(&month) {
         return Err("Month must be between 01 and 12".to_string());
     }
 

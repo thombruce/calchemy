@@ -211,6 +211,19 @@ impl Calendar {
         Ok(expanded)
     }
 
+    pub fn expanded_events_on_day(
+        &self,
+        day: NaiveDate,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Vec<ExpandedEvent> {
+        self.events_between(start, end)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|exp| exp.date == day)
+            .collect()
+    }
+
     fn expand_recurrence(
         &self,
         event: &Event,
@@ -394,14 +407,13 @@ pub fn parse_event_line(line: &str) -> Option<Event> {
     let mut exception_keyword = None;
 
     for meta in metadata {
-        if meta.starts_with('@') {
-            location = Some(meta[1..].to_string());
-        } else if meta.starts_with('+') {
-            tags.push(meta[1..].to_string());
-        } else if meta.starts_with("rrule:") {
-            rrule = Some(meta[6..].to_string());
+        if let Some(stripped) = meta.strip_prefix('@') {
+            location = Some(stripped.to_string());
+        } else if let Some(stripped) = meta.strip_prefix('+') {
+            tags.push(stripped.to_string());
+        } else if let Some(stripped) = meta.strip_prefix("rrule:") {
+            rrule = Some(stripped.to_string());
         } else if meta.starts_with(EXCEPT_PREFIX) || meta.starts_with(EXDATE_PREFIX) {
-            // Determine which keyword was used
             let is_except = meta.starts_with(EXCEPT_PREFIX);
             let prefix = if is_except {
                 exception_keyword = Some("except".to_string());
@@ -413,21 +425,18 @@ pub fn parse_event_line(line: &str) -> Option<Event> {
 
             let value = &meta[prefix.len()..];
 
-            // exdate: only supports comma-separated (RRULE spec) - no ranges
-            // except: supports comma-separated AND ranges (..)
             if is_except {
                 parse_exception_value(value, true, &mut exceptions);
             } else {
                 parse_exception_value(value, false, &mut exceptions);
             }
-        } else if meta.starts_with(EVERY_PREFIX) {
-            let keyword = &meta[EVERY_PREFIX.len()..];
+        } else if let Some(keyword) = meta.strip_prefix(EVERY_PREFIX) {
             if let Some(rrule_value) = parse_every_keyword(keyword) {
                 rrule = Some(rrule_value);
                 every_keyword = Some(meta.to_string());
             }
-        } else if meta.starts_with('#') {
-            hashtags.push(meta[1..].to_string());
+        } else if let Some(stripped) = meta.strip_prefix('#') {
+            hashtags.push(stripped.to_string());
         }
     }
 
@@ -462,31 +471,25 @@ fn parse_exception_value(value: &str, allow_ranges: bool, exceptions: &mut Vec<N
             continue;
         }
 
-        // Check for range syntax (..) - only supported in except:, not exdate:
         if part.contains("..") && allow_ranges {
             let range_parts: Vec<&str> = part.split("..").collect();
-            if range_parts.len() == 2 {
-                if let Ok(start) = NaiveDate::parse_from_str(range_parts[0], "%Y-%m-%d") {
-                    if let Ok(end) = NaiveDate::parse_from_str(range_parts[1], "%Y-%m-%d") {
-                        if end >= start {
-                            let mut current = start;
-                            while current <= end {
-                                if !exceptions.contains(&current) {
-                                    exceptions.push(current);
-                                }
-                                current = current + chrono::Duration::days(1);
-                            }
-                        }
+            if range_parts.len() == 2
+                && let Ok(start) = NaiveDate::parse_from_str(range_parts[0], "%Y-%m-%d")
+                && let Ok(end) = NaiveDate::parse_from_str(range_parts[1], "%Y-%m-%d")
+                && end >= start
+            {
+                let mut current = start;
+                while current <= end {
+                    if !exceptions.contains(&current) {
+                        exceptions.push(current);
                     }
+                    current += chrono::Duration::days(1);
                 }
             }
-        } else {
-            // Single date
-            if let Ok(d) = NaiveDate::parse_from_str(part, "%Y-%m-%d") {
-                if !exceptions.contains(&d) {
-                    exceptions.push(d);
-                }
-            }
+        } else if let Ok(d) = NaiveDate::parse_from_str(part, "%Y-%m-%d")
+            && !exceptions.contains(&d)
+        {
+            exceptions.push(d);
         }
     }
 }
@@ -508,21 +511,19 @@ fn format_event(event: &Event) -> String {
     // Handle end_time - for multi-day events, it goes after end_date
     // For single-day events, it goes before end_date would be (but we don't have end_date)
     let end_time_before_title = event.end_time.is_some() && event.end_date.is_none();
-    if end_time_before_title {
-        if let Some(end) = event.end_time {
-            parts.push(end.format("%H:%M").to_string());
-        }
+    if end_time_before_title
+        && let Some(end) = event.end_time
+    {
+        parts.push(end.format("%H:%M").to_string());
     }
 
-    // Handle multi-day events - output end_date (and end_time if present)
     if let Some(end_date) = event.end_date {
         parts.push(end_date.format("%Y-%m-%d").to_string());
 
-        // For multi-day with times, end_time goes after end_date
-        if event.end_date.is_some() && event.end_time.is_some() {
-            if let Some(end) = event.end_time {
-                parts.push(end.format("%H:%M").to_string());
-            }
+        if event.end_time.is_some()
+            && let Some(end) = event.end_time
+        {
+            parts.push(end.format("%H:%M").to_string());
         }
     }
 
@@ -731,7 +732,7 @@ pub fn export_ics(calendar: &Calendar, path: &str) -> Result<(), CalchemyError> 
             let ndt = event.date.and_hms_opt(23, 59, 59).unwrap();
             CalendarDateTime::from(ndt)
         } else {
-            start.clone()
+            start
         };
 
         ics_event.summary(&event.title);

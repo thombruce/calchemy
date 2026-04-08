@@ -10,6 +10,7 @@ use ratatui::{
     style::Style,
     Frame, Terminal,
 };
+use std::collections::HashSet;
 
 use crate::{
     parse_event_line,
@@ -58,18 +59,18 @@ impl App {
 
     pub fn load_calendar(&mut self, path: &str) {
         self.path = Some(path.to_string());
-        if std::path::Path::new(path).exists() {
-            if let Ok(cal) = Calendar::load(path) {
-                self.calendar = cal;
-            }
+        if std::path::Path::new(path).exists()
+            && let Ok(cal) = Calendar::load(path)
+        {
+            self.calendar = cal;
         }
     }
 
     fn save(&self) {
-        if let Some(ref path) = self.path {
-            if let Err(e) = self.calendar.save(path) {
-                eprintln!("Error saving: {}", e);
-            }
+        if let Some(ref path) = self.path
+            && let Err(e) = self.calendar.save(path)
+        {
+            eprintln!("Error saving: {}", e);
         }
     }
 
@@ -78,10 +79,10 @@ impl App {
             return;
         }
 
-        if let Some(ref path) = self.path {
-            if let Err(e) = self.calendar.save(path) {
-                eprintln!("Error saving: {}", e);
-            }
+        if let Some(ref path) = self.path
+            && let Err(e) = self.calendar.save(path)
+        {
+            eprintln!("Error saving: {}", e);
         }
         self.dirty = false;
     }
@@ -96,13 +97,13 @@ impl App {
         loop {
             terminal.draw(|f| self.draw(f))?;
 
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    if self.show_input {
-                        self.handle_input(key.code);
-                    } else {
-                        self.handle_key(key.code);
-                    }
+            if let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                if self.show_input {
+                    self.handle_input(key.code);
+                } else {
+                    self.handle_key(key.code);
                 }
             }
 
@@ -247,30 +248,28 @@ impl App {
     fn handle_dialog_choice(&mut self, choice: u8) {
         match self.dialog_state {
             DialogState::CloseRecurring => {
-                if let Some(day) = self.selected_day {
-                    if let Some(idx) = self.selected_event_index {
-                        let day_events = self.get_events_with_indices_for_day(day);
-                        if let Some((calendar_idx, _)) = day_events.get(idx) {
-                            let is_recurring =
-                                self.calendar.events()[*calendar_idx].rrule.is_some()
-                                    || self.calendar.events()[*calendar_idx]
-                                        .every_keyword
-                                        .is_some();
+                if let Some(day) = self.selected_day
+                    && let Some(idx) = self.selected_event_index
+                {
+                    let day_events = self.get_events_with_indices_for_day(day);
+                    if let Some((calendar_idx, _)) = day_events.get(idx) {
+                        let is_recurring =
+                            self.calendar.events()[*calendar_idx].rrule.is_some()
+                                || self.calendar.events()[*calendar_idx]
+                                    .every_keyword
+                                    .is_some();
 
-                            if is_recurring {
-                                match choice {
-                                    1 => {
-                                        // Close this occurrence - add exception + closed instance
-                                        self.close_occurrence(*calendar_idx, day);
-                                    }
-                                    2 => {
-                                        // Close all - mark original completed
-                                        self.calendar.events_mut()[*calendar_idx].completed = true;
-                                        self.dirty = true;
-                                        self.save();
-                                    }
-                                    _ => {}
+                        if is_recurring {
+                            match choice {
+                                1 => {
+                                    self.close_occurrence(*calendar_idx, day);
                                 }
+                                2 => {
+                                    self.calendar.events_mut()[*calendar_idx].completed = true;
+                                    self.dirty = true;
+                                    self.save();
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -279,41 +278,38 @@ impl App {
                 self.selected_event_index = None;
             }
             DialogState::DeleteRecurring => {
-                if let Some(day) = self.selected_day {
-                    if let Some(idx) = self.selected_event_index {
-                        let day_events = self.get_events_with_indices_for_day(day);
-                        if let Some((calendar_idx, _)) = day_events.get(idx) {
-                            match choice {
-                                1 => {
-                                    // Delete one - add exception
-                                    if !self.calendar.events()[*calendar_idx]
+                if let Some(day) = self.selected_day
+                    && let Some(idx) = self.selected_event_index
+                {
+                    let day_events = self.get_events_with_indices_for_day(day);
+                    if let Some((calendar_idx, _)) = day_events.get(idx) {
+                        match choice {
+                            1 => {
+                                if !self.calendar.events()[*calendar_idx]
+                                    .exceptions
+                                    .contains(&day)
+                                {
+                                    self.calendar.events_mut()[*calendar_idx]
                                         .exceptions
-                                        .contains(&day)
-                                    {
-                                        self.calendar.events_mut()[*calendar_idx]
-                                            .exceptions
-                                            .push(day);
-                                        self.dirty = true;
-                                        self.save();
-                                    }
-                                }
-                                2 => {
-                                    // Delete future - add end_date
-                                    if self.calendar.events()[*calendar_idx].end_date.is_none() {
-                                        self.calendar.events_mut()[*calendar_idx].end_date =
-                                            Some(day);
-                                        self.dirty = true;
-                                        self.save();
-                                    }
-                                }
-                                3 => {
-                                    // Delete all - remove original
-                                    self.calendar.events_mut().remove(*calendar_idx);
+                                        .push(day);
                                     self.dirty = true;
                                     self.save();
                                 }
-                                _ => {}
                             }
+                            2 => {
+                                if self.calendar.events()[*calendar_idx].end_date.is_none() {
+                                    self.calendar.events_mut()[*calendar_idx].end_date =
+                                        Some(day);
+                                    self.dirty = true;
+                                    self.save();
+                                }
+                            }
+                            3 => {
+                                self.calendar.events_mut().remove(*calendar_idx);
+                                self.dirty = true;
+                                self.save();
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -380,23 +376,21 @@ impl App {
         };
         self.current_month = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
 
-        // Update selected day to stay within new month
-        if let Some(day) = self.selected_day {
-            if day < self.current_month {
-                self.selected_day = Some(self.current_month);
-            }
+        if let Some(day) = self.selected_day
+            && day < self.current_month
+        {
+            self.selected_day = Some(self.current_month);
         }
 
-        // Reset event selection when changing month
         self.selected_event_index = None;
     }
 
     fn prev_day(&mut self) {
-        if let Some(day) = self.selected_day {
-            if day > self.current_month {
-                self.selected_day = Some(day - chrono::Duration::days(1));
-                self.selected_event_index = None;
-            }
+        if let Some(day) = self.selected_day
+            && day > self.current_month
+        {
+            self.selected_day = Some(day - chrono::Duration::days(1));
+            self.selected_event_index = None;
         }
     }
 
@@ -445,79 +439,44 @@ impl App {
     }
 
     fn get_events_for_day(&self, day: NaiveDate) -> Vec<String> {
-        let month_start = self.current_month;
-        let month_end = self.get_month_end();
-
-        let expanded = self
-            .calendar
-            .events_between(month_start, month_end)
-            .unwrap_or_default();
-
-        let mut events = Vec::new();
-
-        // Add expanded recurrence events
-        for exp in &expanded {
-            if exp.date == day {
-                if let Some(original) = self.calendar.events().get(exp.original_event_index) {
-                    let event_str = crate::format_expanded_event_for_display(exp, original);
-                    events.push(event_str);
-                }
-            }
-        }
-
-        // Add non-recurring multi-day events that span this day
-        for event in self.calendar.events().iter() {
-            if event.rrule.is_none() && event.every_keyword.is_none() {
-                if let Some(end_date) = event.end_date {
-                    if event.date <= day && end_date >= day {
-                        // Skip if already added via expanded events
-                        let already_added = events.iter().any(|s| s.contains(&event.title));
-                        if !already_added {
-                            let event_str = crate::format_event_for_display(event);
-                            events.push(event_str);
-                        }
-                    }
-                }
-            }
-        }
-
-        events
+        self.get_expanded_events_with_indices_for_day(day)
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect()
     }
 
     fn get_events_with_indices_for_day(&self, day: NaiveDate) -> Vec<(usize, String)> {
+        self.get_expanded_events_with_indices_for_day(day)
+    }
+
+    fn get_expanded_events_with_indices_for_day(&self, day: NaiveDate) -> Vec<(usize, String)> {
         let month_start = self.current_month;
         let month_end = self.get_month_end();
 
-        let expanded = self
-            .calendar
-            .events_between(month_start, month_end)
-            .unwrap_or_default();
-
         let mut events = Vec::new();
+        let mut added_indices: HashSet<usize> = HashSet::new();
 
-        // Add expanded recurrence events
-        for exp in &expanded {
-            if exp.date == day {
-                if let Some(original) = self.calendar.events().get(exp.original_event_index) {
-                    let event_str = crate::format_expanded_event_for_display(exp, original);
-                    events.push((exp.original_event_index, event_str));
-                }
-            }
+        for exp in self
+            .calendar
+            .expanded_events_on_day(day, month_start, month_end)
+        {
+            added_indices.insert(exp.original_event_index);
+            let event_str = crate::format_expanded_event_for_display(
+                &exp,
+                &self.calendar.events()[exp.original_event_index],
+            );
+            events.push((exp.original_event_index, event_str));
         }
 
-        // Add non-recurring multi-day events that span this day
         for (idx, event) in self.calendar.events().iter().enumerate() {
-            if event.rrule.is_none() && event.every_keyword.is_none() {
-                if let Some(end_date) = event.end_date {
-                    if event.date <= day && end_date >= day {
-                        // Skip if already added via expanded events
-                        let already_added = events.iter().any(|(_, s)| s.contains(&event.title));
-                        if !already_added {
-                            let event_str = crate::format_event_for_display(event);
-                            events.push((idx, event_str));
-                        }
-                    }
-                }
+            if event.rrule.is_none()
+                && event.every_keyword.is_none()
+                && !added_indices.contains(&idx)
+                && let Some(end_date) = event.end_date
+                && event.date <= day && end_date >= day
+            {
+                let event_str = crate::format_event_for_display(event);
+                events.push((idx, event_str));
             }
         }
 
