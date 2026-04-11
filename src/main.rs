@@ -1,7 +1,6 @@
-use calchemy::{Calendar, Event};
+use calchemy::{config::Config, Calendar, Event};
 use chrono::{NaiveDate, NaiveTime};
 use clap::{Parser, Subcommand};
-use directories::ProjectDirs;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -101,16 +100,6 @@ enum Commands {
     },
 }
 
-fn get_default_path() -> PathBuf {
-    if let Some(proj_dirs) = ProjectDirs::from("com", "calchemy", "calchemy") {
-        let data_dir = proj_dirs.data_dir();
-        std::fs::create_dir_all(data_dir).ok();
-        data_dir.join("events.cal")
-    } else {
-        PathBuf::from("events.cal")
-    }
-}
-
 fn parse_date(s: &str) -> Result<NaiveDate, String> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| format!("Invalid date format: {}", e))
 }
@@ -160,10 +149,22 @@ fn parse_range(s: &str) -> Result<(NaiveDate, NaiveDate), String> {
     Ok((start, end))
 }
 
+fn get_calendar_path(file: &Option<PathBuf>) -> PathBuf {
+    if let Some(path) = file {
+        return path.clone();
+    }
+
+    if let Some(config) = Config::load() {
+        return config.calendar_path();
+    }
+
+    Config::default_calendar_path()
+}
+
 fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let path = cli.file.unwrap_or_else(get_default_path);
+    let path = get_calendar_path(&cli.file);
 
     let mut calendar = if path.exists() {
         Calendar::load(path.to_str().unwrap())?
@@ -361,7 +362,7 @@ fn run_cli() -> Result<(), Box<dyn std::error::Error>> {
 fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     use calchemy::tui::app::App;
 
-    let path = get_default_path();
+    let path = get_calendar_path(&None);
     let mut app = App::new();
     app.load_calendar(path.to_str().unwrap());
     app.run()?;

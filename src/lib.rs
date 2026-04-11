@@ -3,6 +3,7 @@ use rrule::Tz;
 use std::cmp::Ordering;
 use thiserror::Error;
 
+pub mod config;
 pub mod tui;
 
 pub const RRULE_PREFIX: &str = "rrule:";
